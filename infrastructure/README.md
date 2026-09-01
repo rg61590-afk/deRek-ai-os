@@ -1,4 +1,5 @@
 # infrastructure
 
-Reserved for deployment/infrastructure-as-code assets beyond the
-Replit configuration at the repository root. Empty in v0.0.1.
+Reserved for deployment/infrastructure-as-code assets. Empty in v0.1.0;
+host-specific deployment configuration will be added when a platform
+is chosen.

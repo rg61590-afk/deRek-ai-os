@@ -6,6 +6,19 @@ versioned API router into a single FastAPI application instance. It
 intentionally contains no business logic - only application bootstrap.
 """
 
+import sys
+from pathlib import Path
+
+# `packages/` lives at the repository root, one level above `apps/`, and
+# is not (yet) an installed distribution (no root-level pyproject.toml).
+# Add the repository root to sys.path so `packages.*` imports (used by
+# routers/tasks.py) resolve regardless of whether this process was
+# launched via `python main.py`, uvicorn, or pytest. Must run before any
+# first-party import below that transitively imports `packages`.
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI

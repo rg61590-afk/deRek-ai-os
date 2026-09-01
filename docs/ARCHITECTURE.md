@@ -1,30 +1,32 @@
-# Architecture — v0.0.1 (Foundation)
+# Architecture — v0.1.0 (Foundation + Sprint 2)
 
 ## Scope
 
-This release is the project **foundation only**. It intentionally
-excludes:
+This release includes the **project foundation** (v0.0.1) and the
+**Sprint 2 Task Engine** implementation. It intentionally excludes:
 
-- AI provider integration
+- AI provider integration (NVIDIA Nemotron models — Sprint 3)
 - Authentication / authorization
 - Database connectivity
-- Agents / agent orchestration
+- deRek Mind / agent orchestration
+- Memory + RAG (Sprint 4)
+- Plugin Layer (Sprint 5+)
 - Email sending
 - Browser automation
 
 Those capabilities have reserved locations in the repository
 (`packages/agents`, `packages/providers`, `packages/memory`, etc.) but
-contain no implementation yet. As of Sprint 001, `packages/providers`
-holds an abstract `AIProvider` interface only — still no concrete
-Claude/Gemini/etc. integration.
+contain no concrete implementation yet. `packages/providers` holds an
+abstract `AIProvider` interface only; the NVIDIA Nemotron model
+integrations are the target for Sprint 3.
 
 ## Repository layout
 
 ```
 apps/
-  api/          FastAPI backend (this release: skeleton + health/version)
+  api/          FastAPI backend (health, version, Task Engine)
   dashboard/    React + TypeScript + Vite + Tailwind frontend
-  mobile/       Reserved, not implemented in v0.0.1
+  mobile/       Reserved, not implemented
 packages/
   kernel/       Reserved: the deRek Kernel — shared core every capability plugs into
   providers/    AI/model provider integrations — abstract AIProvider interface only (base.py)
@@ -39,6 +41,45 @@ tests/          Cross-app/integration tests
 tools/          Developer tooling and scripts
 infrastructure/ Deployment/infra-as-code assets
 ```
+
+## Task Engine (`packages/tasks`)
+
+Sprint 2 implements the Task Engine, which is framework-agnostic (no
+FastAPI dependency) and exposed over HTTP by `apps/api/routers/tasks.py`.
+
+Every unit of work in deRek AI OS is a `Task` that moves through the
+seven-state lifecycle defined in `docs/PROJECT_BIBLE.md` (Task
+Lifecycle): `Queued`, `Planning`, `Running`, `Waiting`, `Completed`,
+`Failed`, `Cancelled`. The package implements this lifecycle plus the
+in-memory storage, queuing, and processing needed to create and run a
+task end to end.
+
+- **`models.py`** — `Task`, `TaskTransition`, `TaskState`, and
+  `ExecutionMode` (Interactive, Background, Scheduled, Event Driven,
+  Autonomous — per Execution Modes in the Bible). Pure Pydantic v2
+  data models; no I/O.
+- **`state_machine.py`** — the authoritative transition graph
+  (`ALLOWED_TRANSITIONS`) and `apply_transition()`, which validates a
+  transition and appends it to the task's history rather than
+  overwriting prior state.
+- **`queue.py`** — `TaskQueue`, a thin `asyncio.Queue` wrapper holding
+  task IDs awaiting processing.
+- **`manager.py`** — `TaskManager`, the in-memory store and the single
+  point through which tasks are created, looked up, listed,
+  transitioned, completed, failed, and deleted.
+- **`worker.py`** — `TaskWorker`, which drives a task through
+  `Queued -> Planning -> Running -> Completed`/`Failed` via a pluggable
+  `TaskExecutor`. `default_executor` performs no real work — it is the
+  Task Engine's honest default, expected to be replaced by
+  capability-based routing once the NVIDIA Provider lands in Sprint 3.
+- **`exceptions.py`** — `TaskError`, `TaskNotFoundError`,
+  `InvalidStateTransitionError`. Framework-agnostic; the API layer
+  translates these into `HTTPException`.
+
+The Task Engine does **not** implement AI providers or capability
+routing — a task declares a `capability` (a lowercase snake_case
+string) but nothing resolves that capability to a provider yet. That
+is the Capability Router and Provider Layer's job, out of scope here.
 
 ## Backend (`apps/api`)
 
@@ -113,6 +154,7 @@ each with a checked-in `.env.example` documenting every variable. No
 
 ## Deployment
 
-The repository root includes a `.replit` file and `replit.nix` for
-running the API on Replit. The dashboard is a standard Vite app and
-can be deployed to any static host or run alongside the API.
+Deployment is configured per host. The repository currently ships
+without a host-specific deployment configuration; the backend runs
+locally via `uvicorn` and the dashboard is a standard Vite app that
+can be served as a static build.

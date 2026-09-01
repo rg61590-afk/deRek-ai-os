@@ -1,10 +1,12 @@
 """
 Abstract AI provider interface for deRek AI OS.
 
-This module defines the contract every AI provider integration
-(Claude, Gemini, OpenAI, local models, etc.) must implement in order to
-plug into the Kernel. It intentionally contains no concrete provider
-implementation — that is out of scope for this release.
+This module defines the contract every AI provider integration must
+implement in order to plug into the Kernel. It intentionally contains
+no concrete provider implementation — that is out of scope for this
+release. The interface is designed to be provider-agnostic so that
+any AI provider compatible with the project's architecture can be
+integrated without changing the Core System.
 """
 
 from __future__ import annotations
@@ -81,13 +83,13 @@ class ProviderUnavailableError(ProviderError):
 class AIProvider(ABC):
     """Abstract interface every AI provider integration must implement.
 
-    Concrete implementations (e.g. Claude, Gemini) are intentionally
-    out of scope for this release. This class exists so the Kernel and
-    the rest of deRek AI OS can be developed against a stable contract
-    before any provider is wired in.
+    Concrete implementations are intentionally out of scope for this
+    release. This class exists so the Kernel and the rest of deRek AI OS
+    can be developed against a stable contract before any provider is
+    wired in. The abstraction remains extensible for future providers.
     """
 
-    #: Human-readable provider name, e.g. "anthropic", "google".
+    #: Human-readable provider name (e.g. "nvidia").
     name: str
 
     #: Capabilities this provider implementation supports.

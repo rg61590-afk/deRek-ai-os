@@ -8,7 +8,7 @@
 
 ![Version](https://img.shields.io/badge/version-v0.1.0-blue)
 ![Status](https://img.shields.io/badge/status-early%20development-orange)
-![Python](https://img.shields.io/badge/python-3.11-blue)
+![Python](https://img.shields.io/badge/python-3.14-blue)
 ![FastAPI](https://img.shields.io/badge/backend-FastAPI-009688)
 ![React](https://img.shields.io/badge/frontend-React%20%2B%20TypeScript-61DAFB)
 ![License](https://img.shields.io/badge/license-TBD-lightgrey)
@@ -49,7 +49,7 @@
 
 deRek AI OS is an open-source project building toward an autonomous operating layer for AI-driven work: coding, automation, creative generation, and intelligent task execution, coordinated through a single system rather than a collection of disconnected tools.
 
-The project is in **early development**. The current release (`v0.1.0`) establishes the production-grade foundation — a versioned API, a structured logging and error-handling layer, and a minimal dashboard — that every future capability will be built on top of. No AI provider, agent, or automation capability is implemented yet.
+The project is in **early development**. The current release (`v0.1.0`) establishes the production-grade foundation — a versioned API, a structured logging and error-handling layer, and a minimal dashboard — that every future capability will be built on top of. The Task Engine (Sprint 2) is implemented: it delivers the full task lifecycle, state machine, in-memory storage, task queue, and a pluggable executor interface exposed over HTTP via `/api/v1/tasks`. The current focus is Sprint 2.1 — Runtime Modernization — making the backend compatible with the latest stable Python release (currently 3.14). No AI provider, deRek Mind, Memory + RAG, or Plugin Layer is implemented yet — see [Current Features](#current-features) and [Planned Features](#planned-features) for the full breakdown.
 
 ## Current Status
 
@@ -57,9 +57,9 @@ The project is in **early development**. The current release (`v0.1.0`) establis
 |---|---|
 | **Version** | `v0.1.0` |
 | **Status** | Early Development |
-| **Current phase** | Phase 0 — Foundation (see [Roadmap](#roadmap)) |
+| **Current sprint** | Sprint 2.1 — Runtime Modernization (see [Roadmap](#roadmap)) |
 
-The foundational phase is complete: a versioned API, a standardized response envelope, structured logging, request correlation, global exception handling, a minimal dashboard, and an abstract AI provider interface. No AI provider, Task Engine, Event Bus, Memory Layer, Plugin Layer, or Agent Framework is implemented yet — see [Current Features](#current-features) and [Planned Features](#planned-features) for the full breakdown.
+The foundational phase (Sprint 1) is complete: a versioned API, a standardized response envelope, structured logging, request correlation, global exception handling, a minimal dashboard, and an abstract AI provider interface. Sprint 2 (Task Engine) is also complete, delivering the full task lifecycle, state machine, in-memory storage, task queue, and a pluggable executor interface exposed over HTTP via `/api/v1/tasks`. The current focus is Sprint 2.1 — Runtime Modernization — making the backend compatible with the latest stable Python release (currently 3.14). No AI provider, deRek Mind, Memory + RAG, or Plugin Layer is implemented yet — see [Current Features](#current-features) and [Planned Features](#planned-features) for the full breakdown.
 
 ## Vision
 
@@ -83,7 +83,7 @@ Most AI tooling available today is either a single-model chat interface or a nar
 
 Three principles guide the project from this early stage:
 
-- **Provider independence.** AI capabilities are defined behind an abstract interface first. Concrete providers (starting with Claude and Gemini) are implementations of that interface, not the interface itself.
+- **Provider independence.** AI capabilities are defined behind an abstract interface first. Concrete providers (starting with NVIDIA's Nemotron model family) are implementations of that interface, not the interface itself.
 - **Foundation before features.** Before any AI capability was added, the project established versioned APIs, a consistent response contract, structured logging, request correlation, and centralized error handling — the operational groundwork production systems need.
 - **Transparency about status.** This README distinguishes explicitly between what is implemented today and what is planned. Nothing below is described as working unless it is.
 
@@ -103,18 +103,17 @@ Everything in this section is implemented in the current codebase.
 - **Abstract AI provider interface** — `packages/providers/base.py` defines the `AIProvider` contract (request/response models, capability flags, error types) that all future provider integrations must implement. No concrete provider is implemented against it yet.
 - **Reserved subsystem scaffolding** — `packages/kernel`, `packages/tasks`, `packages/events`, `packages/plugins`, `packages/agents`, `packages/memory`, and `packages/shared` exist as empty, structured packages reserved for the subsystems described in [Planned Features](#planned-features).
 - **Automated test coverage** — a `pytest` suite covering the health and version endpoints, the response envelope contract, request ID propagation, and the global exception handler.
-- **Replit deployment configuration** — `.replit`, `replit.nix`, and a run script for hosting the API on Replit.
+- **Task Engine** — the full task lifecycle (Queued, Planning, Running, Waiting, Completed, Failed, Cancelled), state machine transitions, in-memory storage, task queue, and a pluggable executor interface. Exposed over HTTP via `/api/v1/tasks`. The default executor performs no real work; AI-powered execution is deferred to Sprint 3.
 
 ## Planned Features
 
 Everything in this section is **not yet implemented**. It represents the intended direction of the project, not current functionality.
 
-- **Concrete AI provider integrations** — Claude and Gemini implementations of the `AIProvider` interface (see [AI Provider Strategy](#ai-provider-strategy)).
-- **Task Engine** — scheduling and execution of discrete units of work across the system.
+- **Concrete AI provider integrations** — NVIDIA Nemotron model implementations of the `AIProvider` interface (see [AI Provider Strategy](#ai-provider-strategy)).
 - **Event bus** (`packages/events`) — publish/subscribe communication between subsystems (tasks completing, providers responding, agents changing state).
 - **Workers** — background and asynchronous execution processes separate from the request/response cycle.
 - **Plugin system** (`packages/plugins`) — a defined extension mechanism for adding capabilities without modifying the core system.
-- **Agent framework** (`packages/agents`) — autonomous, multi-step task planning and execution built on top of the Task Engine and provider layer.
+- **deRek Mind** (`packages/agents`) — autonomous, multi-step task planning and execution built on top of the Task Engine and provider layer.
 - **Memory Layer** (`packages/memory`) — persistent state and context storage for tasks, agents, and providers.
 - **Authentication and authorization** — not present in the current foundation.
 - **Database connectivity** — no database is connected in the current release.
@@ -135,15 +134,10 @@ The system defines its AI capabilities behind a single abstract interface rather
 
 | Provider | Capability | Purpose |
 |---|---|---|
-| Anthropic | Claude | General-purpose reasoning, writing, and conversation |
-| Anthropic | Claude Code | Code generation, review, and software engineering assistance |
-| Anthropic | Claude Design | AI-assisted visual and product design workflows |
-| Anthropic | Claude Collaboration | Multi-agent and human-AI collaborative workflows |
-| Google | Gemini (Text) | Text-based language understanding and generation |
-| Google | Gemini (Multimodal) | Combined text, image, and other modality understanding and generation |
-| Google | Nano Banana | Image generation and editing |
-| Google | Veo | Video generation |
-| Google | Flow | Creative workflow orchestration |
+| NVIDIA | Nemotron 3.5 Lightning | Quick, low-latency model for simple tasks and high-frequency agent steps |
+| NVIDIA | Nemotron 3 Super | Balanced default model for coding, reasoning, planning, tool use, and normal autonomous tasks |
+| NVIDIA | Nemotron 3 Ultra | Maximum reasoning model for complex planning, difficult coding, and multi-step agent tasks |
+| NVIDIA | Nemotron Embed | Planned retrieval/embedding model for the future Memory + RAG layer |
 
 ```mermaid
 flowchart TB
@@ -151,31 +145,20 @@ flowchart TB
         AIProvider["AIProvider (abstract interface)\npackages/providers/base.py"]
     end
 
-    subgraph Anthropic["Planned — Anthropic"]
-        Claude["Claude"]
-        ClaudeCode["Claude Code"]
-        ClaudeDesign["Claude Design"]
-        ClaudeCollab["Claude Collaboration"]
+    subgraph NVIDIA["Planned — NVIDIA"]
+        Lightning["Nemotron 3.5 Lightning\n(fast, lightweight)"]
+        Super["Nemotron 3 Super\n(balanced default)"]
+        Ultra["Nemotron 3 Ultra\n(maximum reasoning)"]
+        Embed["Nemotron Embed\n(RAG/retrieval — planned)"]
     end
 
-    subgraph Google["Planned — Google"]
-        Gemini["Gemini (text & multimodal)"]
-        NanoBanana["Nano Banana (image gen & editing)"]
-        Veo["Veo (video generation)"]
-        Flow["Flow (creative workflows)"]
-    end
-
-    AIProvider -.implements.-> Claude
-    AIProvider -.implements.-> ClaudeCode
-    AIProvider -.implements.-> ClaudeDesign
-    AIProvider -.implements.-> ClaudeCollab
-    AIProvider -.implements.-> Gemini
-    AIProvider -.implements.-> NanoBanana
-    AIProvider -.implements.-> Veo
-    AIProvider -.implements.-> Flow
+    AIProvider -.implements.-> Lightning
+    AIProvider -.implements.-> Super
+    AIProvider -.implements.-> Ultra
+    AIProvider -.implements.-> Embed
 
     classDef planned stroke-dasharray: 5 5;
-    class Claude,ClaudeCode,ClaudeDesign,ClaudeCollab,Gemini,NanoBanana,Veo,Flow planned;
+    class Lightning,Super,Ultra,Embed planned;
 ```
 
 ## Future Integrations
@@ -206,16 +189,15 @@ flowchart LR
     Dashboard["Dashboard\nReact + TypeScript + Tailwind\n(implemented)"]
 
     subgraph API["FastAPI backend (implemented)"]
-        Router["/api/v1 router\n(health, version)"]
+        Router["/api/v1 router\n(health, version, tasks)"]
         Middleware["Request ID middleware\nGlobal exception handling"]
         Envelope["StandardResponse envelope"]
     end
 
     subgraph Kernel["Core subsystems (reserved, not implemented)"]
         Providers["Providers\nabstract interface implemented,\nno concrete provider"]
-        Tasks["Task Engine (planned)"]
         Events["Event Bus (planned)"]
-        Agents["Agent Framework (planned)"]
+        deRekMind["deRek Mind (planned)"]
         Memory["Memory Layer (planned)"]
         Plugins["Plugin Layer (planned)"]
     end
@@ -226,7 +208,7 @@ flowchart LR
     Router -.-> Kernel
 
     classDef planned stroke-dasharray: 5 5;
-    class Tasks,Events,Agents,Memory,Plugins planned;
+    class Events,deRekMind,Memory,Plugins planned;
 ```
 
 ## Technology Stack
@@ -234,20 +216,20 @@ flowchart LR
 | Layer | Technology | Status |
 |---|---|---|
 | Backend framework | FastAPI | Implemented |
-| Backend language | Python 3.11 | Implemented |
+| Backend language | Python 3.14 | Implemented |
 | Data validation | Pydantic v2 | Implemented |
 | Frontend framework | React | Implemented |
 | Frontend language | TypeScript | Implemented |
 | Frontend styling | Tailwind CSS | Implemented |
-| Hosting | Replit | Implemented |
+| Hosting | TBD (local development with VS Code) | To be configured |
 | Version control | GitHub | Implemented |
-| AI provider — Anthropic | Claude, Claude Code, Claude Design, Claude Collaboration | Planned |
-| AI provider — Google | Gemini, Nano Banana, Veo, Flow | Planned |
-| Task execution | Task Engine, Workers | Planned |
+| AI provider — NVIDIA | Nemotron 3.5 Lightning, Nemotron 3 Super, Nemotron 3 Ultra (current); Nemotron Embed (planned for Memory + RAG) | Planned |
+| Task execution | Task Engine | Implemented (Sprint 2) |
+| Worker execution | Worker loop (background processes) | Planned |
 | Messaging | Event Bus | Planned |
-| Persistence | Memory Layer | Planned |
+| Persistence | Memory + RAG Layer | Planned |
+| Autonomy | deRek Mind | Planned |
 | Extensibility | Plugin Layer | Planned |
-| Autonomy | Agent Framework | Planned |
 | Mobile | Mobile Dashboard | Planned |
 
 ## Project Structure
@@ -273,10 +255,11 @@ packages/
   kernel/                Reserved: shared core every capability plugs into
   providers/
     base.py                Abstract AIProvider interface (implemented)
-  tasks/                 Reserved: task execution engine
+  tasks/                 Task Engine — task definitions, scheduling,
+                         and execution (Sprint 2, implemented)
   events/                Reserved: event bus
   plugins/               Reserved: plugin layer
-  agents/                Reserved: agent framework
+  agents/                Reserved: deRek Mind — agent architecture
   memory/                Reserved: memory layer
   shared/                Reserved: cross-app shared types and utilities
 
@@ -288,12 +271,12 @@ infrastructure/         Deployment and infrastructure-as-code assets
 
 ## Quick Start
 
-Requires Python 3.11 and Node.js 20+.
+Requires the latest stable Python release and Node.js 20+. deRek targets the latest stable Python release; older Python versions are only retained when there is a documented upstream compatibility blocker.
 
 ```bash
 # Backend
 cd apps/api
-python3.11 -m venv .venv && source .venv/bin/activate
+python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env
 python main.py
@@ -311,15 +294,14 @@ npm run dev
 
 ### Prerequisites
 
-- Python 3.11
+- Latest stable Python release (Sprint 2.1 targets Python 3.14; deRek targets the latest stable Python release)
 - Node.js 20+ and npm
-- A Replit account (optional, for hosted deployment)
 
 ### Backend
 
 ```bash
 cd apps/api
-python3.11 -m venv .venv
+python3 -m venv .venv
 source .venv/bin/activate        # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 cp .env.example .env             # never commit a real .env file
@@ -352,24 +334,18 @@ cd apps/api
 pytest
 ```
 
-### Deployment (Replit)
-
-The repository root includes `.replit`, `replit.nix`, and `tools_run_api.sh`. Running the project on Replit installs backend dependencies, seeds `.env` from `.env.example` if one does not already exist, and starts the API with `uvicorn` on the assigned port. The dashboard is a static Vite build (`npm run build`) and can be deployed separately, pointed at the deployed API's `/api/v1` prefix.
-
 ## Roadmap
 
 | Phase | Focus | Status |
 |---|---|---|
-| Phase 0 | Foundation — versioned API, standard response envelope, structured logging, request correlation, global exception handling, dashboard skeleton, abstract AI provider interface | Complete |
-| Phase 1 | Task Engine — task creation, the task lifecycle, execution modes, and capability-based routing | Planned |
-| Phase 2 | Provider Implementations — concrete `AIProvider` implementations for Claude and Gemini, selected via the Provider Selection Policy | Planned |
-| Phase 3 | Event Bus & Workers — publish/subscribe communication between subsystems and background execution | Planned |
-| Phase 4 | Memory Layer — task, session, and long-term memory with durable storage | Planned |
-| Phase 5 | Plugin Layer — the plugin contract, followed by the integrations listed in [Future Integrations](#future-integrations) | Planned |
-| Phase 6 | Agent Framework — autonomous, multi-step planning and execution | Planned |
-| Phase 7 | Expansion Surfaces — mobile client, browser automation, and the remaining creative-generation capabilities | Planned |
+| Sprint 1 | Foundation — versioned API, standard response envelope, structured logging, request correlation, global exception handling, dashboard skeleton, abstract AI provider interface | Complete |
+| Sprint 2.1 | Runtime Modernization — backend compatibility with latest stable Python (currently 3.14), maintaining compatibility for future Python releases | In progress (prerequisite) |
+| Sprint 2 | Task Engine — task creation, lifecycle (Queued, Planning, Running, Waiting, Completed, Failed, Cancelled), execution modes, and capability-based routing | Complete |
+| Sprint 3 | deRek Mind + NVIDIA Model Integration — agent architecture (deRek Mind) wired to the NVIDIA Provider and Nemotron model lineup | Planned |
+| Sprint 4 | Memory + RAG — persistent memory with Hybrid Retrieval, Reranking, Context Builder, and Nemotron Embed | Planned |
+| Sprint 5+ | Tool Expansion / Autonomous Workflows / Additional Capabilities — Plugin Layer, integrations, expanded agent capabilities | Planned |
 
-Phase boundaries and ordering may change as the project develops. This table mirrors the Long-Term Roadmap in [`docs/PROJECT_BIBLE.md`](docs/PROJECT_BIBLE.md#23-long-term-roadmap), which also explains why each phase depends on the ones before it.
+Phase boundaries and ordering may change as the project develops. This table mirrors the Long-Term Roadmap in [`docs/PROJECT_BIBLE.md`](docs/PROJECT_BIBLE.md#24-long-term-roadmap), which also explains why each phase depends on the ones before it.
 
 ## Documentation
 
@@ -420,4 +396,4 @@ A license has not yet been finalized and published for this project. Until a `LI
 
 deRek AI OS is built on top of, and would not be possible without, the open-source projects it depends on, including FastAPI, Pydantic, Starlette, Uvicorn, React, Vite, and Tailwind CSS.
 
-AI capabilities are planned to build on models and tools from Anthropic and Google; deRek is an independent project and is not affiliated with either company.
+AI capabilities are planned to build on models and tools from NVIDIA; deRek is an independent project and is not affiliated with any AI provider.

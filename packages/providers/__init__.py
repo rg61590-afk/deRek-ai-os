@@ -1,7 +1,9 @@
 """AI provider integrations for deRek AI OS.
 
 Exposes the abstract `AIProvider` interface. No concrete provider
-(Claude, Gemini, etc.) is implemented in this release.
+is implemented in this release. The current planned runtime provider
+is NVIDIA with the Nemotron model family; the abstraction remains
+extensible for future providers.
 """
 
 from .base import (

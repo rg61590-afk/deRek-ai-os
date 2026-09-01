@@ -20,17 +20,18 @@
 10. [Git Workflow](#10-git-workflow)
 11. [Sprint Workflow](#11-sprint-workflow)
 12. [Task Lifecycle](#12-task-lifecycle)
-13. [Execution Modes](#13-execution-modes)
-14. [Memory Strategy](#14-memory-strategy)
-15. [Plugin Strategy](#15-plugin-strategy)
-16. [Architecture Decision Records (ADR)](#16-architecture-decision-records-adr)
-17. [Documentation Standards](#17-documentation-standards)
-18. [Security Principles](#18-security-principles)
-19. [Testing Standards](#19-testing-standards)
-20. [Naming Conventions](#20-naming-conventions)
-21. [Future Integrations](#21-future-integrations)
-22. [Non-Goals](#22-non-goals)
-23. [Long-Term Roadmap](#23-long-term-roadmap)
+13. [deRek Mind / Agent Architecture](#13-derek-mind--agent-architecture)
+14. [Execution Modes](#14-execution-modes)
+15. [Memory Strategy](#15-memory-strategy)
+16. [Plugin Strategy](#16-plugin-strategy)
+17. [Architecture Decision Records (ADR)](#17-architecture-decision-records-adr)
+18. [Documentation Standards](#18-documentation-standards)
+19. [Security Principles](#19-security-principles)
+20. [Testing Standards](#20-testing-standards)
+21. [Naming Conventions](#21-naming-conventions)
+22. [Future Integrations](#22-future-integrations)
+23. [Non-Goals](#23-non-goals)
+24. [Long-Term Roadmap](#24-long-term-roadmap)
 
 ---
 
@@ -85,14 +86,13 @@ flowchart TB
         TaskEngine["Task Engine"]
         EventBus["Event Bus"]
         Memory["Memory Layer"]
-        AgentFw["Agent Framework"]
+        deRekMind["deRek Mind"]
     end
 
     subgraph Providers["Provider Layer"]
         ProviderIface["Abstract Provider Interface"]
-        Anthropic["Anthropic implementations"]
-        Google["Google implementations"]
-        OtherProviders["Additional providers"]
+        NVIDIA["NVIDIA Provider"]
+        FutureProviders["Future providers"]
     end
 
     subgraph Plugins["Plugin Layer"]
@@ -106,20 +106,19 @@ flowchart TB
     CapRouter --> TaskEngine
     TaskEngine --> EventBus
     TaskEngine --> Memory
-    TaskEngine --> AgentFw
+    TaskEngine --> deRekMind
     CapRouter --> ProviderIface
-    ProviderIface --> Anthropic
-    ProviderIface --> Google
-    ProviderIface --> OtherProviders
+    ProviderIface --> NVIDIA
+    ProviderIface --> FutureProviders
     TaskEngine --> PluginRegistry
     PluginRegistry --> Integrations
 ```
 
 **API Layer.** The externally facing surface of the system: a versioned REST API, request correlation and global exception handling, and a standard response envelope applied consistently across every endpoint.
 
-**Core System.** The Capability Router, Task Engine, Event Bus, Memory layer, and Agent Framework. This is the system's central coordination logic — it decides what needs to happen, tracks the state of work in progress, and holds the context that work depends on.
+**Core System.** The Capability Router, Task Engine, Event Bus, Memory layer, and deRek Mind. This is the system's central coordination logic — it decides what needs to happen, tracks the state of work in progress, and holds the context that work depends on.
 
-**Provider Layer.** All AI capability is accessed through a single abstract provider interface. Concrete providers (Anthropic, Google, and others as they are added) are implementations of that interface and are interchangeable from the Core System's point of view.
+**Provider Layer.** All AI capability is accessed through a single abstract provider interface. Concrete providers (NVIDIA and others as they are added) are implementations of that interface and are interchangeable from the Core System's point of view.
 
 **Plugin Layer.** External services and tools (GitHub, Slack, Docker, browser automation, and so on) are integrated as plugins registered against defined extension points, rather than being called directly from Core System code.
 
@@ -127,7 +126,7 @@ Each layer depends only on the contract exposed by the layer below it, not on th
 
 ## 6. AI Provider Strategy
 
-AI capability in deRek is never accessed directly through a vendor SDK. Every provider is required to implement a single abstract interface, so the Core System can call "generate a response" or "generate an image" without knowing or caring which vendor is behind it.
+deRek's active AI provider strategy is **NVIDIA-first**. All current runtime model access goes through a single NVIDIA provider implementation against the abstract `AIProvider` interface. The Core System calls "generate a response" without knowing or caring which model is behind it; the provider layer resolves the chosen model into a concrete call.
 
 This interface (`AIProvider`) defines, at minimum:
 
@@ -137,34 +136,83 @@ This interface (`AIProvider`) defines, at minimum:
 - A declared set of capabilities (for example: text generation, streaming, vision, function calling, embeddings) so the Capability Router can select an appropriate provider for a given request.
 - A dedicated error hierarchy, so provider failures are predictable and handled uniformly regardless of the underlying vendor's own error format.
 
-### Planned providers
+### Runtime model lineup (NVIDIA)
 
-| Provider | Capability | Purpose |
+The active deRek runtime is built around the NVIDIA Nemotron model family, exposed through the **NVIDIA Provider**. The current model lineup is:
+
+| Model | Role | Intended use |
 |---|---|---|
-| Anthropic | Claude | General-purpose reasoning, writing, and conversation |
-| Anthropic | Claude Code | Code generation, review, and software engineering assistance |
-| Anthropic | Claude Design | AI-assisted visual and product design workflows |
-| Anthropic | Claude Collaboration | Multi-agent and human-AI collaborative workflows |
-| Google | Gemini (Text) | Text-based language understanding and generation |
-| Google | Gemini (Multimodal) | Combined text, image, and other modality understanding and generation |
-| Google | Nano Banana | Image generation and editing |
-| Google | Veo | Video generation |
-| Google | Flow | Creative workflow orchestration |
+| **Nemotron 3.5 Lightning** | Quick / fast model | Low-latency responses, simple tasks, high-frequency agent steps, lightweight execution and validation |
+| **Nemotron 3 Super** | Balanced / default agent model | Coding, reasoning, planning, tool use, RAG-oriented workloads, normal autonomous tasks |
+| **Nemotron 3 Ultra** | Maximum reasoning model | Complex planning, difficult coding, complex multi-step agent tasks, high-complexity reasoning |
 
-No concrete provider is implemented against this interface yet. The interface itself is the current deliverable; each row above becomes a provider implementation in a later phase (see [Long-Term Roadmap](#23-long-term-roadmap)). Additional providers beyond Anthropic and Google may be added later using the same interface, without requiring changes to how the Core System consumes providers.
+In addition, **Nemotron Embed** is the planned retrieval / embedding model intended for the future Memory + RAG layer (see [Memory Strategy](#15-memory-strategy) and [Long-Term Roadmap](#24-long-term-roadmap)). Nemotron Embed is **not** part of the current Task Engine implementation.
+
+### Runtime architecture
+
+At runtime, the provider chain is conceptually:
+
+```
+User
+  ↓
+Model Selector
+  ↓
+Auto OR User-selected model
+  ↓
+NVIDIA Provider
+  ↓
+NVIDIA API
+  ↓
+Nemotron model
+```
+
+The **Model Selector** is the abstraction point between the Core System and any concrete model. The Task Engine does not directly depend on a specific model; it depends on the Model Selector, which in turn delegates to the NVIDIA Provider for the current Nemotron lineup. Adding a new model or provider in the future only requires extending the Model Selector and provider interface — the Task Engine itself does not need to be rewritten.
+
+The NVIDIA Provider is documented as **NVIDIA hosted / API access**, subject to NVIDIA's current availability, quotas, rate limits, and terms. deRek must handle gracefully:
+
+- rate limits,
+- provider unavailability,
+- API errors,
+- and changes in model availability.
+
+deRek does not hard-code assumptions about permanently free API access.
+
+### User model selection
+
+Model selection is a first-class deRek feature. The user is expected to be able to choose:
+
+- **Auto** — deRek selects the appropriate model based on task complexity and capability.
+- **Nemotron 3.5 Lightning** — manual override for quick / fast execution.
+- **Nemotron 3 Super** — manual override for balanced default workloads.
+- **Nemotron 3 Ultra** — manual override for maximum reasoning.
+
+Auto mode allows deRek to select the appropriate model based on task complexity and capability. Manual mode allows the user to explicitly select the model. The current selection is communicated to the NVIDIA Provider by the Model Selector and resolved into a concrete Nemotron model call.
+
+Model selection is **not** hard-coded into the Task Engine. The architecture uses a model abstraction, a model registry, and a provider interface so additional models can be added later without rewriting the Task Engine.
+
+### Providers
+
+| Provider | Status | Models |
+|---|---|---|
+| NVIDIA | Active runtime provider | Nemotron 3.5 Lightning, Nemotron 3 Super, Nemotron 3 Ultra (current); Nemotron Embed (planned for Memory + RAG) |
+
+Additional providers beyond NVIDIA may be added later using the same abstract interface, without requiring changes to how the Core System consumes providers. No concrete provider other than what is described here is part of the current architecture.
+
+> **Note on external development tools.** Claude Code may be used by the development team as an external development and coding tool for building deRek. Claude Code is **not** a deRek runtime provider — it is an internal development aid, separate from the production runtime architecture described above.
 
 ### Provider Selection Policy
 
 When the Capability Router resolves a task to a provider, it is expected to follow a fixed, deterministic selection algorithm rather than an ad hoc or arbitrary choice. The algorithm proceeds in the following order:
 
 1. **Match requested capability.** Identify the set of providers that declare support for the capability the task requires.
-2. **Prefer configured default provider.** Within that set, prefer the provider configured as the default for the capability, if one is set.
-3. **Verify provider health.** Confirm the selected provider currently reports healthy via its health check before routing the task to it.
-4. **Route task.** Dispatch the task to the selected provider.
-5. **Retry if transient failure.** If the provider call fails with a transient error, retry according to the system's standard retry policy before treating the attempt as failed.
-6. **Use fallback provider if available.** If retries are exhausted or the provider is unhealthy, fall back to the next eligible provider for the same capability, if one is configured.
-7. **Log provider selection.** Record which provider was selected, why, and the outcome of the attempt, so provider selection is auditable after the fact.
-8. **Return standardized result.** Return the result to the caller through the same `ProviderResponse` shape regardless of which provider ultimately served the request.
+2. **Apply model selection mode.** If Auto mode is active, the Model Selector chooses the appropriate model based on capability and complexity. If manual mode is active, the user-selected model takes precedence.
+3. **Prefer configured default provider / model.** Within the matched set, prefer the provider configured as the default for the capability, if one is set.
+4. **Verify provider health.** Confirm the selected provider currently reports healthy via its health check before routing the task to it.
+5. **Route task.** Dispatch the task to the selected provider.
+6. **Retry if transient failure.** If the provider call fails with a transient error (rate limit, network error, API error), retry according to the system's standard retry policy before treating the attempt as failed.
+7. **Use fallback provider if available.** If retries are exhausted or the provider is unhealthy, fall back to the next eligible provider for the same capability, if one is configured.
+8. **Log provider selection.** Record which provider was selected, why, and the outcome of the attempt, so provider selection is auditable after the fact.
+9. **Return standardized result.** Return the result to the caller through the same `ProviderResponse` shape regardless of which provider ultimately served the request.
 
 Provider selection must remain deterministic and capability-driven at every step of this algorithm. Given the same capability, the same configuration, and the same provider health state, the router is expected to make the same selection every time — selection is never randomized and never depends on anything other than declared capability, configuration, and health.
 
@@ -174,18 +222,20 @@ The Capability Router is the component responsible for a specific architectural 
 
 When a task is created, it declares what needs to happen — a capability — not which model or vendor should do it. The Capability Router resolves that capability to an available provider (or plugin) that declares support for it, at execution time. This keeps task definitions, task history, and any code that creates tasks completely decoupled from which specific model or vendor happens to be serving a given capability today.
 
+With the NVIDIA Provider as the active runtime provider, the Capability Router resolves capabilities to a model within the Nemotron lineup through the Model Selector. In Auto mode, the Model Selector chooses the appropriate Nemotron model based on the task's declared capability and complexity. In manual mode, the user's explicit model choice takes precedence.
+
 Representative capabilities the router is expected to handle:
 
 - `coding`
 - `reasoning`
-- `image_generation`
-- `video_generation`
-- `creative_workflow`
+- `lightweight_execution`
+- `tool_use`
+- `rag_retrieval`
 - `browser_automation`
 - `email`
 - `research`
 
-This list is representative, not exhaustive — new capabilities are added as new providers and plugins are integrated. A task that requests `coding` should behave identically regardless of whether it is ultimately served by Claude Code, a future coding-capable provider, or a locally hosted model, provided that provider declares support for the `coding` capability. Swapping the provider behind a capability must never require changing the tasks or code that request it.
+This list is representative, not exhaustive — new capabilities are added as new providers are integrated. A task that requests `coding` should behave identically regardless of whether it is ultimately served by Nemotron 3 Super, a future coding-capable provider, or a locally hosted model, provided that provider declares support for the `coding` capability. Swapping the provider behind a capability must never require changing the tasks or code that request it.
 
 ## 8. Folder Structure
 
@@ -218,7 +268,7 @@ packages/
 
   providers/              The AI Provider Layer.
     base.py                 The abstract AIProvider interface — implemented.
-                            No concrete provider (Claude, Gemini, or otherwise)
+                            No concrete provider (NVIDIA or otherwise)
                             is implemented here yet.
 
   tasks/                  Reserved for the Task Engine — task definitions,
@@ -232,7 +282,7 @@ packages/
                           contract for third-party integrations. Empty; not
                           implemented.
 
-  agents/                 Reserved for the Agent Framework — autonomous,
+  agents/                 Reserved for the deRek Mind — autonomous,
                           multi-step task planning and execution built on
                           top of the Task Engine and Provider Layer. Empty;
                           not implemented.
@@ -261,7 +311,7 @@ Every folder under `packages/` exists to fix the shape of the system now, even w
 
 ## 9. Coding Standards
 
-- **Python.** Target Python 3.11. All public functions, methods, and class attributes are typed. Pydantic v2 models are used for any structured data crossing a boundary (API requests/responses, provider requests/responses, configuration). Prefer explicit, readable code over clever code.
+- **Python.** Target the latest stable Python release. All public functions, methods, and class attributes are typed. Pydantic v2 models are used for any structured data crossing a boundary (API requests/responses, provider requests/responses, configuration). Prefer explicit, readable code over clever code.
 - **TypeScript.** Strict mode is enabled and stays enabled. No `any` without a documented reason. Components are function components using hooks; shared logic is extracted rather than duplicated across components.
 - **No hardcoded configuration.** Configuration and secrets are read from environment variables only, via the project's settings layer. Nothing environment-specific is committed to source.
 - **No silent failure.** Errors are raised or logged with context, never swallowed. Provider and plugin code raises the project's own error types rather than leaking vendor-specific exceptions upward.
@@ -326,19 +376,71 @@ stateDiagram-v2
 
 A task's transition history is part of its record — the system does not overwrite prior state, it appends to it. This is what allows a human to inspect not just a task's current status, but how it got there.
 
-## 13. Execution Modes
+## 13. deRek Mind / Agent Architecture
+
+The deRek Mind is the autonomous agent architecture that sits above the Task Engine. It is responsible for turning a user's intent into a sequence of tool-using, goal-directed actions — planning, executing, observing, evaluating, and revising until the task is complete. The architecture is owned by deRek, not by any model vendor: deRek provides the agent loop, the tools, the memory, and the execution discipline. The model provides the reasoning capability underneath that loop.
+
+```
+User
+ ↓
+Task Engine
+ ↓
+deRek Mind
+ ↓
+Planner
+ ↓
+Tool Executor
+ ↓
+Observation
+ ↓
+Evaluation / Critic
+ ↓
+Retry / Revision
+ ↓
+Verification
+ ↓
+Completion
+```
+
+This is the intended flow:
+
+1. **User** submits a task.
+2. **Task Engine** receives it and enters it into the task lifecycle (see [Task Lifecycle](#12-task-lifecycle)).
+3. **deRek Mind** takes over once planning begins — it owns the agentic loop from this point forward.
+4. **Planner** decomposes the task into a sequence of executable steps.
+5. **Tool Executor** carries out each step, calling the appropriate capability (provider, plugin, or internal action).
+6. **Observation** captures the result of each step.
+7. **Evaluation / Critic** assesses whether the result meets the step's intent and the overall task goal.
+8. **Retry / Revision** revises the plan and retries if the result is insufficient — the agent loop continues until the task succeeds or is explicitly cancelled.
+9. **Verification** confirms the final result against the original task intent.
+10. **Completion** marks the task as completed in the Task Engine.
+
+### Model vs. deRek: a critical distinction
+
+It is important not to describe deRek as merely a wrapper around an AI API. The relationship is:
+
+- **The model** (Nemotron 3 Super or Ultra via the NVIDIA Provider) is the reasoning engine. It processes prompts, generates text, reasons about plans, and critiques outputs.
+- **deRek** is the agent architecture: task management, planning, tool execution, observation, evaluation, retry/revision, verification, and the overall execution discipline that turns a model's reasoning into completed work.
+
+The model is a component; deRek is the system that uses it. deRek's identity is not tied to any specific model — the provider interface exists precisely so that the model can be changed without changing deRek itself.
+
+This distinction is what makes deRek an operating system rather than a thin API client. The agentic loop — planning, executing, observing, evaluating, retrying, verifying — is deRek's contribution. The model's contribution is reasoning within that loop.
+
+The deRek Mind and the full agent architecture are **not** implemented in the current sprint. They are part of the planned system, following the Task Engine in the roadmap (see [Long-Term Roadmap](#24-long-term-roadmap)).
+
+## 14. Execution Modes
 
 A task's lifecycle (see [Task Lifecycle](#12-task-lifecycle)) describes the states a task moves through. Execution mode describes something different: what causes a task to be created and run in the first place, and how closely a human is involved while it does. Every task runs under exactly one execution mode.
 
 - **Interactive.** The task is created and driven directly by a human, in real time, typically through a conversational or request/response interaction. The system executes and reports back within the interaction itself, and the human is present to review the result as it completes.
 - **Background.** The task runs outside the immediate request/response cycle. It is created by an interactive request (or another task) but does not block on completion — the requester continues, and the task's result is delivered or retrieved separately once it finishes.
 - **Scheduled.** The task is created to run at a specific time or on a recurring interval, independent of any single interactive request. Scheduling defines when the task enters the `Queued` state; from there it follows the same lifecycle as any other task.
-- **Event Driven.** The task is created in response to an event published on the Event Bus (see [Architecture Overview](#5-architecture-overview) and the Event Bus phase in [Long-Term Roadmap](#23-long-term-roadmap)), rather than by direct human request or a schedule. This is what allows one subsystem's outcome to trigger work in another without those subsystems being directly coupled.
-- **Autonomous.** The task, or a chain of tasks, is planned and carried out by the Agent Framework with minimal step-by-step human direction, consistent with the autonomous execution principle in [Core Principles](#4-core-principles). Autonomous mode still produces the same observable task records and remains interruptible; autonomy governs how a task is initiated and directed, not whether it is observable.
+- **Event Driven.** The task is created in response to an event published on the Event Bus (see [Architecture Overview](#5-architecture-overview) and the Event Bus phase in [Long-Term Roadmap](#24-long-term-roadmap)), rather than by direct human request or a schedule. This is what allows one subsystem's outcome to trigger work in another without those subsystems being directly coupled.
+- **Autonomous.** The task, or a chain of tasks, is planned and carried out by the deRek Mind with minimal step-by-step human direction, consistent with the autonomous execution principle in [Core Principles](#4-core-principles). Autonomous mode still produces the same observable task records and remains interruptible; autonomy governs how a task is initiated and directed, not whether it is observable.
 
 Execution mode and task lifecycle are independent of each other: a task in any of these modes still moves through `Queued`, `Planning`, `Running`, `Waiting`, `Completed`, `Failed`, or `Cancelled` in the same way. Execution mode determines how and why a task begins; the lifecycle governs it from that point forward.
 
-## 14. Memory Strategy
+## 15. Memory Strategy
 
 Memory is the persistent state and context layer that tasks, agents, and providers draw on across executions — it is what allows the system to act on more than the contents of a single request.
 
@@ -348,11 +450,34 @@ At a strategic level, deRek's memory layer is expected to distinguish between:
 - **Session or working memory** — shorter-lived context relevant to an ongoing interaction or a sequence of related tasks.
 - **Long-term memory** — durable context that persists across sessions and tasks (for example, established facts, preferences, or prior outcomes worth retaining), retrieved deliberately rather than always loaded in full.
 
-The memory layer is accessed through its own interface, in the same spirit as the provider layer: consumers (the Task Engine, the Agent Framework) depend on a memory contract, not on a specific storage backend, so the underlying storage technology can be chosen or changed without reshaping the code that depends on it.
+The memory layer is accessed through its own interface, in the same spirit as the provider layer: consumers (the Task Engine, the deRek Mind) depend on a memory contract, not on a specific storage backend, so the underlying storage technology can be chosen or changed without reshaping the code that depends on it.
 
 Memory is not implemented in the current codebase (`packages/memory` is a reserved, empty package). This section defines the strategy the eventual implementation is expected to follow.
 
-## 15. Plugin Strategy
+### Memory + RAG (Planned)
+
+The planned Memory + RAG subsystem integrates persistent memory with retrieval-augmented generation. The planned architecture is:
+
+```
+Memory Layer
+  ↓
+Hybrid Retrieval
+  ├── Semantic/vector retrieval
+  ├── Keyword/exact retrieval
+  └── Structured memory
+  ↓
+Reranking
+  ↓
+Context Builder
+  ↓
+deRek Mind
+```
+
+**Nemotron Embed** is the planned retrieval/embedding model for the future Memory + RAG layer. It is intended for the retrieval/embedding pipeline and is **not** part of the current Task Engine implementation. When the Memory Layer is implemented (per the Long-Term Roadmap), Nemotron Embed will provide the vector embedding capability for semantic retrieval, complementing keyword-based retrieval and structured memory access.
+
+RAG is a **planned** subsystem, not an implemented feature. No RAG, retrieval, or memory implementation exists in the current codebase.
+
+## 16. Plugin Strategy
 
 Plugins are how deRek integrates with external tools and services (see [Future Integrations](#21-future-integrations)) without those integrations being written directly into the Core System.
 
@@ -366,7 +491,7 @@ A plugin is expected to:
 
 The plugin system itself is not implemented in the current codebase (`packages/plugins` is a reserved, empty package). This section defines the contract the eventual implementation is expected to satisfy.
 
-## 16. Architecture Decision Records (ADR)
+## 17. Architecture Decision Records (ADR)
 
 Major architectural decisions — the kind that would change how a reader of this document understands the system if reversed — are recorded as Architecture Decision Records in `docs/adr/`, not left to live only in pull request discussions or chat history.
 
@@ -377,10 +502,9 @@ Major architectural decisions — the kind that would change how a reader of thi
   - Why FastAPI
   - Why Provider Layer
   - Why Capability Router
-  - Why Replit
   - Why Supabase
 
-## 17. Documentation Standards
+## 18. Documentation Standards
 
 - Documentation is updated in the same change as the code it describes, not treated as a follow-up task.
 - Every document states its own status where relevant — current and implemented, or planned/aspirational — so a reader is never left to guess whether something described actually exists yet.
@@ -389,7 +513,7 @@ Major architectural decisions — the kind that would change how a reader of thi
 - Documentation is written in plain, direct language. Marketing language and unverified superlatives are avoided in favor of specific, checkable claims.
 - New reserved or empty packages are documented with a short `README.md` explaining what they are reserved for, so their purpose is clear before any implementation exists.
 
-## 18. Security Principles
+## 19. Security Principles
 
 - **Principle of Least Privilege.** Every component, provider, and plugin is granted only the access it needs to do its job, and no more. Broad or standing access is avoided in favor of narrowly scoped permissions granted per capability.
 - **Environment variables for secrets.** All secrets — API keys, tokens, credentials — are read from environment variables through the project's standard configuration layer, never embedded in code or configuration files.
@@ -400,7 +524,7 @@ Major architectural decisions — the kind that would change how a reader of thi
 - **Secure provider authentication.** Authentication to AI providers is handled through the provider layer's own configuration, using credentials scoped to that provider only, never shared across providers or hardcoded into provider implementations.
 - **Secure plugin permissions.** Plugins declare the permissions they require, consistent with the plugin contract in [Plugin Strategy](#15-plugin-strategy), and are granted only those permissions — a plugin should not be able to silently gain access beyond what it declared it needs.
 
-## 19. Testing Standards
+## 20. Testing Standards
 
 - Every package or app that contains logic has an automated test suite; a package with no tests is treated as incomplete, not merely untested.
 - Tests are written against public interfaces and observable behavior, not internal implementation details, so implementations can change without needlessly breaking tests.
@@ -409,7 +533,7 @@ Major architectural decisions — the kind that would change how a reader of thi
 - Tests must pass locally before a pull request is opened, and in CI before a pull request is merged.
 - A bug fix is accompanied by a test that would have caught the bug, wherever practical.
 
-## 20. Naming Conventions
+## 21. Naming Conventions
 
 - **Packages and folders:** lowercase, hyphen-free, singular-or-plural as appropriate to their contents (`providers`, `tasks`, `events`) — chosen for what they contain, matching the existing `packages/` layout.
 - **Python modules and files:** `snake_case.py`.
@@ -422,7 +546,7 @@ Major architectural decisions — the kind that would change how a reader of thi
 - **API routes:** lowercase, hyphenated where multi-word, versioned under `/api/v{n}`.
 - **Task states:** `PascalCase` as listed in [Task Lifecycle](#12-task-lifecycle) (`Queued`, `Planning`, `Running`, `Waiting`, `Completed`, `Failed`, `Cancelled`).
 
-## 21. Future Integrations
+## 22. Future Integrations
 
 The plugin system is expected to support integrations with the following external tools and services. None of these are implemented in the current codebase; they are listed here to establish the intended integration surface the Plugin Layer is designed against.
 
@@ -441,7 +565,7 @@ The plugin system is expected to support integrations with the following externa
 
 Each of these, when implemented, is expected to be a plugin in the sense defined in [Plugin Strategy](#15-plugin-strategy) — declaring the capabilities it provides, independently registrable, and failing predictably through the system's standard error handling.
 
-## 22. Non-Goals
+## 23. Non-Goals
 
 Stating what deRek is not is as important as stating what it is. These are deliberate exclusions, not gaps to be closed later:
 
@@ -450,17 +574,17 @@ Stating what deRek is not is as important as stating what it is. These are delib
 - **Not a low-code automation platform.** deRek is not a drag-and-drop workflow builder aimed at non-technical users configuring simple triggers and actions. It is an engineered system for autonomous, capability-driven task execution.
 - **Not a collection of unrelated AI tools.** Every capability in deRek is expected to plug into the same core through the same contracts. A feature that only works standalone, disconnected from the Capability Router, the Task Engine, and the rest of the system, does not belong in deRek as currently scoped.
 
-## 23. Long-Term Roadmap
+## 24. Long-Term Roadmap
 
-This roadmap describes the intended order of major architectural phases. It is not a committed schedule, and phase boundaries may shift as the project develops; see the README's Roadmap section for the current, versioned status of each phase.
+This roadmap describes the intended order of major architectural phases. It is not a committed schedule, and phase boundaries may shift as the project develops.
 
-1. **Foundation.** Versioned API, standard response envelope, structured logging, request correlation, global exception handling, dashboard skeleton, and the abstract AI provider interface.
-2. **Task Engine.** Implementation of task creation, the state transitions defined in [Task Lifecycle](#12-task-lifecycle), the execution modes defined in [Execution Modes](#13-execution-modes), and capability-based routing as described in [Capability Router](#7-capability-router).
-3. **Provider Implementations.** Concrete implementations of `AIProvider` for the providers listed in [AI Provider Strategy](#6-ai-provider-strategy), starting with Anthropic and Google, selected at runtime according to the [Provider Selection Policy](#provider-selection-policy).
-4. **Event Bus & Workers.** Publish/subscribe communication between subsystems and background execution separate from the request/response cycle.
-5. **Memory Layer.** Implementation of the strategy defined in [Memory Strategy](#14-memory-strategy) — task, session, and long-term memory, with durable storage.
-6. **Plugin Layer.** Implementation of the plugin contract defined in [Plugin Strategy](#15-plugin-strategy), followed by the integrations listed in [Future Integrations](#21-future-integrations), added incrementally.
-7. **Agent Framework.** Autonomous, multi-step planning and execution built on top of the Task Engine, Capability Router, and Provider Layer.
-8. **Expansion Surfaces.** Mobile client, browser automation, and the remaining creative-generation capabilities (video, multimodal, and workflow-oriented providers) brought fully online.
+| Sprint | Focus | Status |
+|---|---|---|
+| Sprint 1 | Foundation — versioned API, standard response envelope, structured logging, request correlation, global exception handling, dashboard skeleton, and the abstract AI provider interface | **Completed** |
+| Sprint 2.1 | Runtime Modernization — make the backend compatible with the latest stable Python release (currently Python 3.14), keeping the project maintainable for future Python releases | **Current prerequisite work** |
+| Sprint 2 | Task Engine — task creation, the state transitions defined in [Task Lifecycle](#12-task-lifecycle), the execution modes defined in [Execution Modes](#14-execution-modes), and capability-based routing as described in [Capability Router](#7-capability-router) | **Completed** |
+| Sprint 3 | deRek Mind + NVIDIA Model Integration — the deRek Mind agent architecture described in [deRek Mind / Agent Architecture](#13-derek-mind--agent-architecture), wired to the NVIDIA Provider and the Nemotron model lineup defined in [AI Provider Strategy](#6-ai-provider-strategy) | **Planned** |
+| Sprint 4 | Memory + RAG — implementation of the strategy defined in [Memory Strategy](#15-memory-strategy), including the planned Memory + RAG subsystem (Hybrid Retrieval, Reranking, Context Builder) and the Nemotron Embed retrieval/embedding model | **Planned** |
+| Sprint 5+ | Tool Expansion / Autonomous Workflows / Additional Capabilities — the Plugin Layer, additional integrations, expanded autonomous agent capabilities, and other surfaces | **Planned** |
 
-Each phase is expected to be built on a stable version of the phases before it — Task Engine work is not built ahead of the Foundation being solid, Provider Implementations are not built ahead of the Task Engine that routes to them, and the Agent Framework is not built ahead of the Task Engine it depends on.
+Phase boundaries and ordering may change as the project develops. Each sprint is expected to be built on a stable version of the sprints before it — Sprint 2's Task Engine work is not built ahead of Sprint 1's Foundation being solid, Sprint 3's deRek Mind work is not built ahead of Sprint 2's Task Engine that it depends on, and Sprint 4's Memory + RAG work is not built ahead of the deRek Mind it serves.
