@@ -1,48 +1,24 @@
-# Architecture — v0.1.0 (Foundation + Sprint 2)
+# Architecture — v0.1.0 (Sprint 1 + Sprint 2 + Sprint 2.1 + Sprint 3)
 
 ## Scope
 
-This release includes the **project foundation** (v0.0.1) and the
-**Sprint 2 Task Engine** implementation. It intentionally excludes:
+This release includes the **project foundation** (Sprint 1), the
+**Sprint 2 Task Engine**, the **Sprint 2.1 Runtime Modernization**, and the
+**Sprint 3 Provider Foundation and Model Selection** implementation.
+It intentionally excludes:
 
-- AI provider integration (NVIDIA Nemotron models — Sprint 3)
+- Real NVIDIA API integration (Sprint 4)
 - Authentication / authorization
 - Database connectivity
 - deRek Mind / agent orchestration
-- Memory + RAG (Sprint 4)
+- Memory + RAG (Sprint 5+)
 - Plugin Layer (Sprint 5+)
 - Email sending
 - Browser automation
 
-Those capabilities have reserved locations in the repository
-(`packages/agents`, `packages/providers`, `packages/memory`, etc.) but
-contain no concrete implementation yet. `packages/providers` holds an
-abstract `AIProvider` interface only; the NVIDIA Nemotron model
-integrations are the target for Sprint 3.
+## CURRENT IMPLEMENTATION
 
-## Repository layout
-
-```
-apps/
-  api/          FastAPI backend (health, version, Task Engine)
-  dashboard/    React + TypeScript + Vite + Tailwind frontend
-  mobile/       Reserved, not implemented
-packages/
-  kernel/       Reserved: the deRek Kernel — shared core every capability plugs into
-  providers/    AI/model provider integrations — abstract AIProvider interface only (base.py)
-  tasks/        Reserved: task execution/orchestration layer
-  events/       Reserved: event bus (pub/sub)
-  plugins/      Reserved: plugin system
-  agents/       Reserved: agent orchestration
-  memory/       Reserved: persistence/memory layer
-  shared/       Reserved: cross-app shared types/utilities
-docs/           Documentation
-tests/          Cross-app/integration tests
-tools/          Developer tooling and scripts
-infrastructure/ Deployment/infra-as-code assets
-```
-
-## Task Engine (`packages/tasks`)
+### Task Engine (`packages/tasks`)
 
 Sprint 2 implements the Task Engine, which is framework-agnostic (no
 FastAPI dependency) and exposed over HTTP by `apps/api/routers/tasks.py`.
@@ -69,19 +45,48 @@ task end to end.
   transitioned, completed, failed, and deleted.
 - **`worker.py`** — `TaskWorker`, which drives a task through
   `Queued -> Planning -> Running -> Completed`/`Failed` via a pluggable
-  `TaskExecutor`. `default_executor` performs no real work — it is the
-  Task Engine's honest default, expected to be replaced by
-  capability-based routing once the NVIDIA Provider lands in Sprint 3.
+  `TaskExecutor`. `default_executor` performs no real work.
 - **`exceptions.py`** — `TaskError`, `TaskNotFoundError`,
   `InvalidStateTransitionError`. Framework-agnostic; the API layer
   translates these into `HTTPException`.
 
 The Task Engine does **not** implement AI providers or capability
 routing — a task declares a `capability` (a lowercase snake_case
-string) but nothing resolves that capability to a provider yet. That
-is the Capability Router and Provider Layer's job, out of scope here.
+string) but nothing resolves that capability to a provider yet.
 
-## Backend (`apps/api`)
+### Provider Foundation (`packages/providers`)
+
+Sprint 3 implements the provider abstraction, model profiles, model
+selection, and a provider registry. No real AI API calls are made.
+
+- **`base.py`** — `AIProvider` abstract base class with `generate()`,
+  `stream()`, and `health_check()`. Also defines `ProviderCapability`,
+  `ProviderRequest`, `ProviderResponse`, `ProviderMessage`, and
+  `ProviderUsage`.
+- **`exceptions.py`** — The canonical provider exception hierarchy:
+  `ProviderError` (base), `ProviderUnavailableError`,
+  `ProviderNotFoundError`, `InvalidModelProfileError`. This is the
+  single, authoritative hierarchy for all provider-domain errors.
+- **`models.py`** — `ModelProfile` (StrEnum: AUTO, LIGHTNING, SUPER,
+  ULTRA) and `ModelMetadata` (Pydantic model with `profile`,
+  `description`, and `recommended_for` keyword tags).
+- **`selector.py`** — `ModelSelector`: resolves a user message and
+  optional preferred profile into a concrete `ModelProfile`.
+  - **Explicit selection**: passing a specific profile bypasses AUTO.
+  - **AUTO selection**: deterministic keyword scoring. Each profile's
+    `recommended_for` tags are matched against the user message
+    (case-insensitive). Profiles with zero matches are ignored.
+    - If no profile scores above zero: returns the configured default
+      profile (SUPER by default).
+    - If exactly one profile has the highest score: that profile wins.
+    - If multiple profiles tie for the highest score: SUPER wins.
+    Tie-breaking is explicit and does not depend on dictionary order.
+- **`registry.py`** — `ProviderRegistry`: registers providers by name,
+  looks them up, reports sorted names, and runs `health_check_all()`
+  with graceful exception handling.
+- **`nvidia/`** — Placeholder package. `NvidiaProvider` is a stub where `generate()` and `stream()` raise `NotImplementedError`; `health_check()` returns `False`. No API calls, no API keys, no hardcoded model IDs.
+
+### Backend (`apps/api`)
 
 - **`main.py`** — Application factory. Builds the `FastAPI` instance,
   registers CORS middleware and `RequestIDMiddleware`, mounts the
@@ -107,6 +112,8 @@ is the Capability Router and Provider Layer's job, out of scope here.
   `StandardResponse` error envelope with the correct status code.
 - **`routers/health.py`** — `GET /api/v1/health` liveness endpoint.
 - **`routers/version.py`** — `GET /api/v1/version` build/version info.
+- **`routers/tasks.py`** — Task Engine HTTP interface (CRUD, state
+  transitions).
 - **`routers/api.py`** — Aggregates the above into one router mounted
   in `main.py` under the `/api/v1` prefix.
 
@@ -131,7 +138,7 @@ Every `/api/v1/*` response — success or error — has this shape:
 echoes back a caller-supplied `X-Request-ID` request header when one
 is sent.
 
-## Frontend (`apps/dashboard`)
+### Frontend (`apps/dashboard`)
 
 A single-page dashboard that displays exactly three things, per the
 v0.0.1 spec:
@@ -146,15 +153,90 @@ envelope and returns just the `data` payload to callers.
 `src/components/ServerStatus.tsx` renders the card and polls the API
 every 15 seconds to keep the status badge current.
 
-## Configuration
+### Configuration
 
 Both apps are configured exclusively through environment variables,
 each with a checked-in `.env.example` documenting every variable. No
 `.env` file is committed to version control.
 
-## Deployment
+### Deployment
 
 Deployment is configured per host. The repository currently ships
 without a host-specific deployment configuration; the backend runs
 locally via `uvicorn` and the dashboard is a standard Vite app that
 can be served as a static build.
+
+---
+
+## PLANNED ARCHITECTURE
+
+The following components and flows are planned but **not yet implemented**.
+
+### NVIDIA Provider Integration (Sprint 4)
+
+```
+User Request
+    ↓
+ModelSelector
+    ↓
+ProviderRegistry
+    ↓
+NVIDIA Provider
+    ↓
+NVIDIA API
+    ↓
+Real Nemotron Model
+```
+
+The `NvidiaProvider` stub in `packages/providers/nvidia/provider.py` will
+be replaced with a real implementation that:
+
+- Accepts configuration via environment variables (e.g. `NVIDIA_API_KEY`)
+- Maps deRek model profiles to NVIDIA model identifiers
+- Makes requests to the NVIDIA NIM or NVIDIA AI Foundation API
+- Implements `generate`, `stream`, and `health_check`
+
+No real API calls, API keys, or model IDs exist in the current codebase.
+
+### deRek Mind / Agent Architecture (Planned)
+
+```
+User
+ ↓
+Task Engine
+ ↓
+deRek Mind
+ ↓
+Planner → Tool Executor → Observation → Evaluation → Retry → Verification
+ ↓
+Completion
+```
+
+### Memory + RAG (Planned)
+
+```
+Memory Layer
+  ↓
+Hybrid Retrieval (semantic, keyword, structured)
+  ↓
+Reranking
+  ↓
+Context Builder
+  ↓
+deRek Mind
+```
+
+`Nemotron Embed` is the planned retrieval/embedding model for this layer.
+No memory, retrieval, or RAG implementation exists in the current codebase.
+
+### Event Bus and Workers (Planned)
+
+Background and asynchronous execution processes separate from the
+request/response cycle, with publish/subscribe communication between
+subsystems.
+
+### Plugin Layer (Planned)
+
+Third-party integrations (GitHub, Slack, Discord, Notion, Gmail,
+Outlook, Google Drive, Google Calendar, Docker, AWS, Local Files,
+Browser Automation) registered against defined extension points.

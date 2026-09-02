@@ -126,7 +126,17 @@ Each layer depends only on the contract exposed by the layer below it, not on th
 
 ## 6. AI Provider Strategy
 
-deRek's active AI provider strategy is **NVIDIA-first**. All current runtime model access goes through a single NVIDIA provider implementation against the abstract `AIProvider` interface. The Core System calls "generate a response" without knowing or caring which model is behind it; the provider layer resolves the chosen model into a concrete call.
+deRek's active AI provider strategy is **NVIDIA-first**. The provider
+foundation (abstract interface, model profiles, model selector,
+registry, and NVIDIA placeholder) is implemented (Sprint 3). The
+abstract `AIProvider` interface and the Model Selector are implemented
+and operational; real NVIDIA API calls are the target of Sprint 4.
+
+The Core System calls "generate a response" without knowing or caring
+which model is behind it; the provider layer resolves the chosen model
+into a concrete call. Currently, the NVIDIA provider is a stub: `generate()` and `stream()`
+raise `NotImplementedError`; `health_check()` returns `False`. The full
+runtime path to real Nemotron models is not yet wired.
 
 This interface (`AIProvider`) defines, at minimum:
 
@@ -136,76 +146,115 @@ This interface (`AIProvider`) defines, at minimum:
 - A declared set of capabilities (for example: text generation, streaming, vision, function calling, embeddings) so the Capability Router can select an appropriate provider for a given request.
 - A dedicated error hierarchy, so provider failures are predictable and handled uniformly regardless of the underlying vendor's own error format.
 
-### Runtime model lineup (NVIDIA)
+### Logical model profiles
 
-The active deRek runtime is built around the NVIDIA Nemotron model family, exposed through the **NVIDIA Provider**. The current model lineup is:
+Sprint 3 implements logical model profiles that abstract over concrete
+NVIDIA models. These profiles are **not yet wired to real NVIDIA model
+IDs** — they are the selection layer that will map to Nemotron models
+once Sprint 4 integration is complete.
 
-| Model | Role | Intended use |
+| Profile | Role | Intended use |
 |---|---|---|
-| **Nemotron 3.5 Lightning** | Quick / fast model | Low-latency responses, simple tasks, high-frequency agent steps, lightweight execution and validation |
-| **Nemotron 3 Super** | Balanced / default agent model | Coding, reasoning, planning, tool use, RAG-oriented workloads, normal autonomous tasks |
-| **Nemotron 3 Ultra** | Maximum reasoning model | Complex planning, difficult coding, complex multi-step agent tasks, high-complexity reasoning |
+| **AUTO** | Automatic selection | deRek selects based on task complexity and keywords |
+| **LIGHTNING** | Fast / lightweight | Quick answers, simple tasks, high-frequency steps |
+| **SUPER** | Balanced / default | General-purpose coding, reasoning, planning |
+| **ULTRA** | Maximum reasoning | Complex planning, difficult coding, multi-step tasks |
 
-In addition, **Nemotron Embed** is the planned retrieval / embedding model intended for the future Memory + RAG layer (see [Memory Strategy](#15-memory-strategy) and [Long-Term Roadmap](#24-long-term-roadmap)). Nemotron Embed is **not** part of the current Task Engine implementation.
+### Current implementation status
 
-### Runtime architecture
+| Component | Status |
+|---|---|
+| `AIProvider` abstract interface | Implemented (`packages/providers/base.py`) |
+| `ModelProfile` + `ModelMetadata` | Implemented (`packages/providers/models.py`) |
+| `ModelSelector` (keyword-scoring AUTO + explicit) | Implemented (`packages/providers/selector.py`) |
+| `ProviderRegistry` | Implemented (`packages/providers/registry.py`) |
+| NVIDIA provider stub | Implemented — `generate()` and `stream()` raise `NotImplementedError`; `health_check()` returns `False` |
+| Real NVIDIA API calls | **Not implemented — Sprint 4** |
+| Hardcoded NVIDIA model IDs | **None — none exist in the codebase** |
 
-At runtime, the provider chain is conceptually:
+### Runtime architecture — CURRENT
+
+The current implementation provides the selection and registry layer,
+but no real provider communication occurs:
 
 ```
-User
-  ↓
-Model Selector
-  ↓
-Auto OR User-selected model
-  ↓
-NVIDIA Provider
-  ↓
+User Request
+    ↓
+ModelProfile Selection (ModelSelector)
+    ↓
+Selected ModelProfile (AUTO / LIGHTNING / SUPER / ULTRA)
+    ↓
+ProviderRegistry (lookup)
+    ↓
+Provider Interface / NVIDIA Stub
+```
+
+The NVIDIA stub (`generate()` and `stream()` raise `NotImplementedError`;
+`health_check()` returns `False`) makes no network calls.
+
+### Runtime architecture — PLANNED (Sprint 4)
+
+Once Sprint 4 integration is complete, the full request-to-inference
+path will be:
+
+```
+User Request
+    ↓
+ModelSelector
+    ↓
+Selected ModelProfile
+    ↓
+ProviderRegistry
+    ↓
+NVIDIA Provider (real implementation)
+    ↓
 NVIDIA API
-  ↓
-Nemotron model
+    ↓
+Real Nemotron Model
 ```
-
-The **Model Selector** is the abstraction point between the Core System and any concrete model. The Task Engine does not directly depend on a specific model; it depends on the Model Selector, which in turn delegates to the NVIDIA Provider for the current Nemotron lineup. Adding a new model or provider in the future only requires extending the Model Selector and provider interface — the Task Engine itself does not need to be rewritten.
-
-The NVIDIA Provider is documented as **NVIDIA hosted / API access**, subject to NVIDIA's current availability, quotas, rate limits, and terms. deRek must handle gracefully:
-
-- rate limits,
-- provider unavailability,
-- API errors,
-- and changes in model availability.
-
-deRek does not hard-code assumptions about permanently free API access.
 
 ### User model selection
 
-Model selection is a first-class deRek feature. The user is expected to be able to choose:
+Model selection is a first-class deRek feature. The user is expected
+to be able to choose:
 
-- **Auto** — deRek selects the appropriate model based on task complexity and capability.
-- **Nemotron 3.5 Lightning** — manual override for quick / fast execution.
-- **Nemotron 3 Super** — manual override for balanced default workloads.
-- **Nemotron 3 Ultra** — manual override for maximum reasoning.
+- **Auto** — deRek selects the appropriate profile based on task
+  complexity and keyword matching (implemented, deterministic).
+- **LIGHTNING** — manual override for quick / fast execution.
+- **SUPER** — manual override for balanced default workloads.
+- **ULTRA** — manual override for maximum reasoning.
 
-Auto mode allows deRek to select the appropriate model based on task complexity and capability. Manual mode allows the user to explicitly select the model. The current selection is communicated to the NVIDIA Provider by the Model Selector and resolved into a concrete Nemotron model call.
+Auto mode uses deterministic keyword scoring against each profile's
+`recommended_for` tags. Ties resolve to SUPER. No matches fall back
+to the configured default (SUPER by default). Explicit selection
+bypasses AUTO entirely.
 
-Model selection is **not** hard-coded into the Task Engine. The architecture uses a model abstraction, a model registry, and a provider interface so additional models can be added later without rewriting the Task Engine.
+Model selection is **not** hard-coded into the Task Engine. The
+architecture uses a model abstraction, a model registry, and a provider
+interface so additional models can be added later without rewriting the
+Task Engine.
 
-### Providers
+### Planned NVIDIA model lineup (Sprint 4)
 
-| Provider | Status | Models |
+These model-to-profile mappings are planned intentions only. No model
+IDs are hardcoded and no API calls exist yet.
+
+| Logical Profile | Planned NVIDIA Model | Intended use |
 |---|---|---|
-| NVIDIA | Active runtime provider | Nemotron 3.5 Lightning, Nemotron 3 Super, Nemotron 3 Ultra (current); Nemotron Embed (planned for Memory + RAG) |
-
-Additional providers beyond NVIDIA may be added later using the same abstract interface, without requiring changes to how the Core System consumes providers. No concrete provider other than what is described here is part of the current architecture.
-
-> **Note on external development tools.** Claude Code may be used by the development team as an external development and coding tool for building deRek. Claude Code is **not** a deRek runtime provider — it is an internal development aid, separate from the production runtime architecture described above.
+| LIGHTNING | Nemotron 3.5 Lightning | Quick, low-latency responses |
+| SUPER | Nemotron 3 Super | Balanced default for coding, reasoning |
+| ULTRA | Nemotron 3 Ultra | Maximum reasoning, complex tasks |
+| (future) | Nemotron Embed | Retrieval/embedding for Memory + RAG (Sprint 5+) |
 
 ### Provider Selection Policy
 
-When the Capability Router resolves a task to a provider, it is expected to follow a fixed, deterministic selection algorithm rather than an ad hoc or arbitrary choice. The algorithm proceeds in the following order:
+When the Capability Router resolves a task to a provider, it is
+expected to follow a fixed, deterministic selection algorithm rather
+than an ad hoc or arbitrary choice. The algorithm proceeds in the
+following order:
 
 1. **Match requested capability.** Identify the set of providers that declare support for the capability the task requires.
-2. **Apply model selection mode.** If Auto mode is active, the Model Selector chooses the appropriate model based on capability and complexity. If manual mode is active, the user-selected model takes precedence.
+2. **Apply model selection mode.** If Auto mode is active, the Model Selector chooses the appropriate profile based on capability and complexity. If manual mode is active, the user-selected profile takes precedence.
 3. **Prefer configured default provider / model.** Within the matched set, prefer the provider configured as the default for the capability, if one is set.
 4. **Verify provider health.** Confirm the selected provider currently reports healthy via its health check before routing the task to it.
 5. **Route task.** Dispatch the task to the selected provider.
@@ -222,7 +271,12 @@ The Capability Router is the component responsible for a specific architectural 
 
 When a task is created, it declares what needs to happen — a capability — not which model or vendor should do it. The Capability Router resolves that capability to an available provider (or plugin) that declares support for it, at execution time. This keeps task definitions, task history, and any code that creates tasks completely decoupled from which specific model or vendor happens to be serving a given capability today.
 
-With the NVIDIA Provider as the active runtime provider, the Capability Router resolves capabilities to a model within the Nemotron lineup through the Model Selector. In Auto mode, the Model Selector chooses the appropriate Nemotron model based on the task's declared capability and complexity. In manual mode, the user's explicit model choice takes precedence.
+With the NVIDIA Provider placeholder in place (Sprint 3), the Capability
+Router resolves capabilities to a logical model profile through the
+Model Selector. In Auto mode, the Model Selector chooses the
+appropriate profile based on keyword scoring. In manual mode, the
+user's explicit profile choice takes precedence. Actual routing to a
+real NVIDIA API call is deferred to Sprint 4.
 
 Representative capabilities the router is expected to handle:
 
@@ -266,13 +320,19 @@ packages/
                           the layer that connects providers, tasks, events,
                           memory, and plugins together. Empty; not implemented.
 
-  providers/              The AI Provider Layer.
-    base.py                 The abstract AIProvider interface — implemented.
-                            No concrete provider (NVIDIA or otherwise)
-                            is implemented here yet.
+  providers/              The AI Provider Layer — **Implemented (Sprint 3)**.
+    __init__.py             Package exports.
+    base.py                 The abstract AIProvider interface.
+    exceptions.py           Canonical provider exception hierarchy.
+    models.py               ModelProfile enum and ModelMetadata.
+    selector.py             Deterministic model selector (AUTO + explicit).
+    registry.py             Provider registration, lookup, health checks.
+    nvidia/
+      __init__.py           NVIDIA package placeholder.
+      provider.py           NvidiaProvider stub (not yet implemented).
 
-  tasks/                  Reserved for the Task Engine — task definitions,
-                          scheduling, and execution. Empty; not implemented.
+  tasks/                  Task Engine — task definitions, scheduling,
+                          and execution (**Implemented, Sprint 2**).
 
   events/                 Reserved for the Event Bus — publish/subscribe
                           communication between subsystems. Empty; not
@@ -581,10 +641,10 @@ This roadmap describes the intended order of major architectural phases. It is n
 | Sprint | Focus | Status |
 |---|---|---|
 | Sprint 1 | Foundation — versioned API, standard response envelope, structured logging, request correlation, global exception handling, dashboard skeleton, and the abstract AI provider interface | **Completed** |
-| Sprint 2.1 | Runtime Modernization — make the backend compatible with the latest stable Python release (currently Python 3.14), keeping the project maintainable for future Python releases | **Current prerequisite work** |
+| Sprint 2.1 | Runtime Modernization — make the backend compatible with the latest stable Python release (currently Python 3.14), keeping the project maintainable for future Python releases | **Completed** |
 | Sprint 2 | Task Engine — task creation, the state transitions defined in [Task Lifecycle](#12-task-lifecycle), the execution modes defined in [Execution Modes](#14-execution-modes), and capability-based routing as described in [Capability Router](#7-capability-router) | **Completed** |
-| Sprint 3 | deRek Mind + NVIDIA Model Integration — the deRek Mind agent architecture described in [deRek Mind / Agent Architecture](#13-derek-mind--agent-architecture), wired to the NVIDIA Provider and the Nemotron model lineup defined in [AI Provider Strategy](#6-ai-provider-strategy) | **Planned** |
-| Sprint 4 | Memory + RAG — implementation of the strategy defined in [Memory Strategy](#15-memory-strategy), including the planned Memory + RAG subsystem (Hybrid Retrieval, Reranking, Context Builder) and the Nemotron Embed retrieval/embedding model | **Planned** |
-| Sprint 5+ | Tool Expansion / Autonomous Workflows / Additional Capabilities — the Plugin Layer, additional integrations, expanded autonomous agent capabilities, and other surfaces | **Planned** |
+| Sprint 3 | Provider Foundation and Model Selection — model profiles (AUTO, LIGHTNING, SUPER, ULTRA), deterministic ModelSelector with keyword-scoring AUTO mode and explicit SUPER tie-breaking, ProviderRegistry, and NVIDIA provider placeholder | **Completed** |
+| Sprint 4 | NVIDIA Provider Integration — real NVIDIA API calls, authentication, model routing to Nemotron models (Lightning, Super, Ultra) | **Next** |
+| Sprint 5+ | Memory + RAG, deRek Mind, Plugin Layer, additional integrations — Embedding support, Hybrid Retrieval, Reranking, Context Builder, autonomous agent architecture | **Planned** |
 
-Phase boundaries and ordering may change as the project develops. Each sprint is expected to be built on a stable version of the sprints before it — Sprint 2's Task Engine work is not built ahead of Sprint 1's Foundation being solid, Sprint 3's deRek Mind work is not built ahead of Sprint 2's Task Engine that it depends on, and Sprint 4's Memory + RAG work is not built ahead of the deRek Mind it serves.
+Phase boundaries and ordering may change as the project develops. Each sprint is expected to be built on a stable version of the sprints before it — the Task Engine builds on Sprint 1's Foundation, the Provider Foundation builds on the provider abstractions and Task Engine, real NVIDIA integration builds on the Provider Foundation, and future deRek Mind and Memory + RAG capabilities build on these underlying systems.
