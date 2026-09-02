@@ -330,3 +330,108 @@ class TestProviderRegistry:
         import asyncio
         results = asyncio.run(registry.health_check_all())
         assert results["bad"] is False
+
+
+# ===========================================================================
+# NVIDIA Configuration (Sprint 4 Phase 1)
+# ===========================================================================
+
+
+from packages.providers.nvidia.config import NvidiaSettings
+from packages.providers.nvidia.provider import NvidiaProvider
+
+
+class TestNvidiaSettings:
+    def test_default_base_url(self):
+        settings = NvidiaSettings()
+        assert settings.base_url == "https://integrate.api.nvidia.com/v1"
+
+    def test_default_timeout(self):
+        settings = NvidiaSettings()
+        assert settings.timeout_seconds == 60
+
+    def test_default_api_key_is_empty(self, monkeypatch):
+        monkeypatch.delenv("NVIDIA_API_KEY", raising=False)
+        settings = NvidiaSettings()
+        assert settings.api_key == ""
+        assert settings.has_api_key is False
+
+    def test_api_key_from_env(self, monkeypatch):
+        monkeypatch.setenv("NVIDIA_API_KEY", "sk-test-key")
+        settings = NvidiaSettings()
+        assert settings.api_key == "sk-test-key"
+        assert settings.has_api_key is True
+
+    def test_custom_base_url(self, monkeypatch):
+        monkeypatch.setenv("NVIDIA_BASE_URL", "https://custom.example.com/v1")
+        settings = NvidiaSettings()
+        assert settings.base_url == "https://custom.example.com/v1"
+
+    def test_custom_timeout(self, monkeypatch):
+        monkeypatch.setenv("NVIDIA_TIMEOUT_SECONDS", "120")
+        settings = NvidiaSettings()
+        assert settings.timeout_seconds == 120
+
+    def test_model_mapping_lightning(self, monkeypatch):
+        monkeypatch.setenv("NVIDIA_MODEL_LIGHTNING", "nemotron-3.5-lightning")
+        settings = NvidiaSettings()
+        assert settings.model_for(ModelProfile.LIGHTNING) == "nemotron-3.5-lightning"
+
+    def test_model_mapping_super(self, monkeypatch):
+        monkeypatch.setenv("NVIDIA_MODEL_SUPER", "nemotron-3-super")
+        settings = NvidiaSettings()
+        assert settings.model_for(ModelProfile.SUPER) == "nemotron-3-super"
+
+    def test_model_mapping_ultra(self, monkeypatch):
+        monkeypatch.setenv("NVIDIA_MODEL_ULTRA", "nemotron-3-ultra")
+        settings = NvidiaSettings()
+        assert settings.model_for(ModelProfile.ULTRA) == "nemotron-3-ultra"
+
+    def test_model_mapping_unset_returns_none(self):
+        settings = NvidiaSettings()
+        assert settings.model_for(ModelProfile.LIGHTNING) is None
+        assert settings.model_for(ModelProfile.SUPER) is None
+        assert settings.model_for(ModelProfile.ULTRA) is None
+
+
+class TestNvidiaProviderConfig:
+    def test_auto_rejected_by_resolve_model(self):
+        provider = NvidiaProvider()
+        with pytest.raises(InvalidModelProfileError):
+            provider.resolve_model(ModelProfile.AUTO)
+
+    def test_missing_model_raises_unavailable(self):
+        provider = NvidiaProvider()
+        with pytest.raises(ProviderUnavailableError):
+            provider.resolve_model(ModelProfile.LIGHTNING)
+
+    def test_missing_model_message_contains_profile(self):
+        provider = NvidiaProvider()
+        with pytest.raises(ProviderUnavailableError, match="lightning"):
+            provider.resolve_model(ModelProfile.LIGHTNING)
+
+    def test_configured_model_returns_id(self, monkeypatch):
+        monkeypatch.setenv("NVIDIA_API_KEY", "sk-test")
+        monkeypatch.setenv("NVIDIA_MODEL_SUPER", "nemotron-3-super")
+        provider = NvidiaProvider()
+        assert provider.resolve_model(ModelProfile.SUPER) == "nemotron-3-super"
+
+    def test_health_check_returns_false(self):
+        provider = NvidiaProvider()
+        import asyncio
+
+        assert asyncio.run(provider.health_check()) is False
+
+    def test_generate_raises_not_implemented(self):
+        import asyncio
+
+        provider = NvidiaProvider()
+        with pytest.raises(NotImplementedError):
+            asyncio.run(provider.generate(None))  # type: ignore[arg-type]
+
+    def test_stream_raises_not_implemented(self):
+        import asyncio
+
+        provider = NvidiaProvider()
+        with pytest.raises(NotImplementedError):
+            asyncio.run(provider.stream(None).__anext__())  # type: ignore[arg-type]
