@@ -72,14 +72,6 @@ class ProviderResponse(BaseModel):
     )
 
 
-class ProviderError(Exception):
-    """Base exception raised by AI provider implementations."""
-
-
-class ProviderUnavailableError(ProviderError):
-    """Raised when a provider cannot currently serve requests."""
-
-
 class AIProvider(ABC):
     """Abstract interface every AI provider integration must implement.
 
