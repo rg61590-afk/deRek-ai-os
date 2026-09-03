@@ -1,10 +1,11 @@
 """
 NVIDIA provider configuration for deRek AI OS.
 
-Reads NVIDIA-specific settings from environment variables.  No secrets
-are hardcoded — every value comes from the environment or a local
-``.env`` file, consistent with the project's configuration architecture
-(see ``apps/api/config.py``).
+``NvidiaSettings`` is a ``pydantic_settings.BaseSettings`` subclass that
+reads NVIDIA-specific configuration from environment variables and the
+project's ``.env`` file.  No secrets are hardcoded — every value comes
+from the environment or ``.env``, consistent with the application
+configuration in ``apps/api/config.py``.
 
 Required:
     NVIDIA_API_KEY
@@ -19,34 +20,53 @@ Optional:
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from os import environ
+from typing import Any
+
+from pydantic import Field
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from packages.providers.models import ModelProfile
 
 
-@dataclass
-class NvidiaSettings:
-    """NVIDIA provider configuration loaded from environment variables."""
+class NvidiaSettings(BaseSettings):
+    """NVIDIA provider configuration loaded from environment / .env file.
 
-    api_key: str = field(default_factory=lambda: environ.get("NVIDIA_API_KEY", ""))
-    base_url: str = field(
-        default_factory=lambda: environ.get(
-            "NVIDIA_BASE_URL", "https://integrate.api.nvidia.com/v1"
-        )
+    Values are resolved in the following order of precedence:
+    1. Explicit constructor arguments (highest priority)
+    2. Actual environment variables
+    3. Values defined in the project's ``.env`` file
+    4. The defaults declared below
+
+    For tests that must not read the real ``.env`` file, use
+    ``NvidiaSettings.for_testing()``.
+    """
+
+    model_config = SettingsConfigDict(
+        env_prefix="NVIDIA_",
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=False,
+        extra="ignore",
     )
-    timeout_seconds: int = field(
-        default_factory=lambda: int(environ.get("NVIDIA_TIMEOUT_SECONDS", "60"))
-    )
-    model_lightning: str | None = field(
-        default_factory=lambda: environ.get("NVIDIA_MODEL_LIGHTNING") or None
-    )
-    model_super: str | None = field(
-        default_factory=lambda: environ.get("NVIDIA_MODEL_SUPER") or None
-    )
-    model_ultra: str | None = field(
-        default_factory=lambda: environ.get("NVIDIA_MODEL_ULTRA") or None
-    )
+
+    api_key: str = Field(default="")
+    base_url: str = Field(default="https://integrate.api.nvidia.com/v1")
+    timeout_seconds: int = Field(default=60)
+    model_lightning: str | None = Field(default=None)
+    model_super: str | None = Field(default=None)
+    model_ultra: str | None = Field(default=None)
+
+    @classmethod
+    def for_testing(cls, **kwargs: Any) -> NvidiaSettings:
+        """Create a settings instance without reading the real ``.env`` file.
+
+        Pass explicit values as keyword arguments.  This bypasses the
+        project's ``.env`` to prevent credential leakage in tests that
+        assert on default values.
+        """
+        config = cls.model_config.copy()
+        config["env_file"] = None  # type: ignore[typeddict-item]
+        return cls(_env_file=None, **kwargs)
 
     @property
     def has_api_key(self) -> bool:
