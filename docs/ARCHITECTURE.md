@@ -1,15 +1,14 @@
-# Architecture — v0.1.0 (Sprint 1 + Sprint 2 + Sprint 2.1 + Sprint 3)
+# Architecture — v0.1.0 (Sprint 1 + Sprint 2 + Sprint 2.1 + Sprint 3 + Sprint 4)
 
 ## Scope
 
 This release includes the **project foundation** (Sprint 1), the
-**Sprint 2 Task Engine**, the **Sprint 2.1 Runtime Modernization**, and the
-**Sprint 3 Provider Foundation and Model Selection** implementation.
+**Sprint 2 Task Engine**, the **Sprint 2.1 Runtime Modernization**, the
+**Sprint 3 Provider Foundation and Model Selection**, and the **Sprint 4
+Application-Layer Provider Integration** implementation.
 It intentionally excludes:
 
-- Real NVIDIA API integration (Sprint 4)
-- Authentication / authorization
-- Database connectivity
+- NVIDIA streaming (Sprint 4+)
 - deRek Mind / agent orchestration
 - Memory + RAG (Sprint 5+)
 - Plugin Layer (Sprint 5+)
@@ -57,7 +56,8 @@ string) but nothing resolves that capability to a provider yet.
 ### Provider Foundation (`packages/providers`)
 
 Sprint 3 implements the provider abstraction, model profiles, model
-selection, and a provider registry. No real AI API calls are made.
+selection, and a provider registry. Sprint 4 adds the NVIDIA provider
+with real non-streaming generation via `NvidiaHttpClient`.
 
 - **`base.py`** — `AIProvider` abstract base class with `generate()`,
   `stream()`, and `health_check()`. Also defines `ProviderCapability`,
@@ -84,7 +84,7 @@ selection, and a provider registry. No real AI API calls are made.
 - **`registry.py`** — `ProviderRegistry`: registers providers by name,
   looks them up, reports sorted names, and runs `health_check_all()`
   with graceful exception handling.
-- **`nvidia/`** — Placeholder package. `NvidiaProvider` is a stub where `generate()` and `stream()` raise `NotImplementedError`; `health_check()` returns `False`. No API calls, no API keys, no hardcoded model IDs.
+- **`nvidia/`** — NVIDIA provider implementation. `NvidiaProvider` implements `AIProvider` with non-streaming `generate()` via `NvidiaHttpClient`, mapping logical model profiles (lightning, super, ultra) to configured NVIDIA model IDs. `stream()` raises `NotImplementedError` (not yet implemented). `health_check()` returns `False`.
 
 ### Backend (`apps/api`)
 
@@ -110,6 +110,15 @@ selection, and a provider registry. No real AI API calls are made.
   handlers for unhandled exceptions, `HTTPException`, and request
   validation errors — all logged and all returned as a
   `StandardResponse` error envelope with the correct status code.
+- **`services/ai.py`** — Application service layer for AI provider
+  execution. Resolves AUTO through `ModelSelector`, looks up providers
+  through `ProviderRegistry`, constructs `ProviderRequest`, invokes
+  the selected provider, and returns the `ProviderResponse`. No
+  HTTP-specific concerns.
+- **`routers/chat.py`** — `POST /api/v1/chat` endpoint. Accepts a
+  provider-agnostic chat request, dispatches to the AI service layer,
+  and returns the response in the standard envelope. No NVIDIA secrets
+  or internal implementation details are exposed.
 - **`routers/health.py`** — `GET /api/v1/health` liveness endpoint.
 - **`routers/version.py`** — `GET /api/v1/version` build/version info.
 - **`routers/tasks.py`** — Task Engine HTTP interface (CRUD, state
@@ -172,31 +181,11 @@ can be served as a static build.
 
 The following components and flows are planned but **not yet implemented**.
 
-### NVIDIA Provider Integration (Sprint 4)
+### NVIDIA Streaming (Sprint 4+)
 
-```
-User Request
-    ↓
-ModelSelector
-    ↓
-ProviderRegistry
-    ↓
-NVIDIA Provider
-    ↓
-NVIDIA API
-    ↓
-Real Nemotron Model
-```
-
-The `NvidiaProvider` stub in `packages/providers/nvidia/provider.py` will
-be replaced with a real implementation that:
-
-- Accepts configuration via environment variables (e.g. `NVIDIA_API_KEY`)
-- Maps deRek model profiles to NVIDIA model identifiers
-- Makes requests to the NVIDIA NIM or NVIDIA AI Foundation API
-- Implements `generate`, `stream`, and `health_check`
-
-No real API calls, API keys, or model IDs exist in the current codebase.
+Streaming text generation via the NVIDIA provider is planned but not
+implemented in this sprint. The `stream()` method raises
+`NotImplementedError`.
 
 ### deRek Mind / Agent Architecture (Planned)
 

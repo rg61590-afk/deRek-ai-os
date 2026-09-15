@@ -2,11 +2,11 @@
 Abstract AI provider interface for deRek AI OS.
 
 This module defines the contract every AI provider integration must
-implement in order to plug into the Kernel. It intentionally contains
-no concrete provider implementation — that is out of scope for this
-release. The interface is designed to be provider-agnostic so that
-any AI provider compatible with the project's architecture can be
-integrated without changing the Core System.
+implement in order to plug into the system. ``AIProvider`` provides
+``generate()``, ``stream()``, and ``health_check()`` plus
+provider-agnostic request/response types and a canonical exception
+hierarchy. Concrete implementations (e.g. ``NvidiaProvider``) are
+provided by the provider packages.
 """
 
 from __future__ import annotations
@@ -75,10 +75,9 @@ class ProviderResponse(BaseModel):
 class AIProvider(ABC):
     """Abstract interface every AI provider integration must implement.
 
-    Concrete implementations are intentionally out of scope for this
-    release. This class exists so the Kernel and the rest of deRek AI OS
-    can be developed against a stable contract before any provider is
-    wired in. The abstraction remains extensible for future providers.
+    ``NvidiaProvider`` is a concrete implementation of this interface.
+    Additional providers can be added by subclassing ``AIProvider``
+    and registering with ``ProviderRegistry``.
     """
 
     #: Human-readable provider name (e.g. "nvidia").

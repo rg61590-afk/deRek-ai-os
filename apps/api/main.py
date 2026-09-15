@@ -29,6 +29,11 @@ from exceptions import register_exception_handlers
 from logger import logger
 from middleware import RequestIDMiddleware
 from routers.api import api_router
+from services.ai import (
+    _PROFILE_METADATA,
+    get_model_selector,
+    init_provider_registry,
+)
 
 settings = get_settings()
 
@@ -43,6 +48,10 @@ async def lifespan(app: FastAPI):
     `@app.on_event("startup"/"shutdown")` decorators.
     """
     # --- Startup -------------------------------------------------------------
+    # Initialize the application-scoped provider registry. This happens
+    # once at startup and is reused for every request.
+    init_provider_registry(app)
+
     logger.info(
         "startup.begin",
         extra={

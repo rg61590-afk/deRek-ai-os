@@ -128,15 +128,19 @@ Each layer depends only on the contract exposed by the layer below it, not on th
 
 deRek's active AI provider strategy is **NVIDIA-first**. The provider
 foundation (abstract interface, model profiles, model selector,
-registry, and NVIDIA placeholder) is implemented (Sprint 3). The
-abstract `AIProvider` interface and the Model Selector are implemented
-and operational; real NVIDIA API calls are the target of Sprint 4.
+registry, and NVIDIA provider with non-streaming generation) is
+implemented (Sprint 3 and Sprint 4). The `AIProvider` interface and
+Model Selector are implemented and operational; real NVIDIA API calls
+are wired and functional via `POST /api/v1/chat` (Sprint 4).
 
 The Core System calls "generate a response" without knowing or caring
 which model is behind it; the provider layer resolves the chosen model
-into a concrete call. Currently, the NVIDIA provider is a stub: `generate()` and `stream()`
-raise `NotImplementedError`; `health_check()` returns `False`. The full
-runtime path to real Nemotron models is not yet wired.
+into a concrete call. The NVIDIA provider implements `generate()` and
+translates logical model profiles to NVIDIA model IDs via `NvidiaHttpClient`.
+`stream()` raises `NotImplementedError` (planned). `health_check()` returns
+`False` (placeholder). The full runtime path from user request through
+model selection, provider lookup, and NVIDIA API generation is implemented
+and operational.
 
 This interface (`AIProvider`) defines, at minimum:
 
@@ -148,10 +152,11 @@ This interface (`AIProvider`) defines, at minimum:
 
 ### Logical model profiles
 
-Sprint 3 implements logical model profiles that abstract over concrete
-NVIDIA models. These profiles are **not yet wired to real NVIDIA model
-IDs** — they are the selection layer that will map to Nemotron models
-once Sprint 4 integration is complete.
+Sprint 3 defines logical model profiles that abstract over concrete
+NVIDIA models. Sprint 4 wires these profiles to configured NVIDIA model
+IDs via environment variables. The `ModelSelector` resolves AUTO
+requests to a concrete profile using keyword scoring; explicit profiles
+bypass AUTO entirely.
 
 | Profile | Role | Intended use |
 |---|---|---|
@@ -168,49 +173,30 @@ once Sprint 4 integration is complete.
 | `ModelProfile` + `ModelMetadata` | Implemented (`packages/providers/models.py`) |
 | `ModelSelector` (keyword-scoring AUTO + explicit) | Implemented (`packages/providers/selector.py`) |
 | `ProviderRegistry` | Implemented (`packages/providers/registry.py`) |
-| NVIDIA provider stub | Implemented — `generate()` and `stream()` raise `NotImplementedError`; `health_check()` returns `False` |
-| Real NVIDIA API calls | **Not implemented — Sprint 4** |
-| Hardcoded NVIDIA model IDs | **None — none exist in the codebase** |
+| NVIDIA provider non-streaming generation | Implemented (`packages/providers/nvidia/provider.py`) — `generate()` routes to NVIDIA NIM API via `NvidiaHttpClient`; `stream()` raises `NotImplementedError`; `health_check()` returns `False` |
+| Real NVIDIA API calls | **Implemented (Sprint 4)** — non-streaming generation via `POST /api/v1/chat` |
+| Hardcoded NVIDIA model IDs | None — model IDs are configured via environment variables |
 
-### Runtime architecture — CURRENT
+### Runtime architecture — CURRENT (Sprint 4)
 
-The current implementation provides the selection and registry layer,
-but no real provider communication occurs:
-
-```
-User Request
-    ↓
-ModelProfile Selection (ModelSelector)
-    ↓
-Selected ModelProfile (AUTO / LIGHTNING / SUPER / ULTRA)
-    ↓
-ProviderRegistry (lookup)
-    ↓
-Provider Interface / NVIDIA Stub
-```
-
-The NVIDIA stub (`generate()` and `stream()` raise `NotImplementedError`;
-`health_check()` returns `False`) makes no network calls.
-
-### Runtime architecture — PLANNED (Sprint 4)
-
-Once Sprint 4 integration is complete, the full request-to-inference
-path will be:
+The full request-to-inference path is implemented and operational:
 
 ```
-User Request
+User/API Request
     ↓
-ModelSelector
+AI Service (resolve AUTO, select provider)
     ↓
-Selected ModelProfile
+ModelSelector (resolve AUTO → concrete profile)
     ↓
-ProviderRegistry
+ProviderRegistry (lookup provider by name)
     ↓
-NVIDIA Provider (real implementation)
+NvidiaProvider.generate() (non-streaming)
     ↓
-NVIDIA API
+NvidiaHttpClient (NVIDIA NIM API)
     ↓
-Real Nemotron Model
+ProviderResponse (logical profile preserved)
+    ↓
+StandardResponse API envelope
 ```
 
 ### User model selection
@@ -236,10 +222,11 @@ Task Engine.
 
 ### Planned NVIDIA model lineup (Sprint 4)
 
-These model-to-profile mappings are planned intentions only. No model
-IDs are hardcoded and no API calls exist yet.
+These model-to-profile mappings are configured via environment variables
+(`NVIDIA_MODEL_LIGHTNING`, `NVIDIA_MODEL_SUPER`, `NVIDIA_MODEL_ULTRA`).
+No model IDs are hardcoded in source.
 
-| Logical Profile | Planned NVIDIA Model | Intended use |
+| Logical Profile | Configured NVIDIA Model | Intended use |
 |---|---|---|
 | LIGHTNING | Nemotron 3.5 Lightning | Quick, low-latency responses |
 | SUPER | Nemotron 3 Super | Balanced default for coding, reasoning |
@@ -271,12 +258,11 @@ The Capability Router is the component responsible for a specific architectural 
 
 When a task is created, it declares what needs to happen — a capability — not which model or vendor should do it. The Capability Router resolves that capability to an available provider (or plugin) that declares support for it, at execution time. This keeps task definitions, task history, and any code that creates tasks completely decoupled from which specific model or vendor happens to be serving a given capability today.
 
-With the NVIDIA Provider placeholder in place (Sprint 3), the Capability
-Router resolves capabilities to a logical model profile through the
-Model Selector. In Auto mode, the Model Selector chooses the
-appropriate profile based on keyword scoring. In manual mode, the
-user's explicit profile choice takes precedence. Actual routing to a
-real NVIDIA API call is deferred to Sprint 4.
+The Capability Router resolves capabilities to a logical model profile
+through the Model Selector. In Auto mode, the Model Selector chooses
+the appropriate profile based on keyword scoring. In manual mode, the
+user's explicit profile choice takes precedence. Actual routing to real
+NVIDIA API calls via ``POST /api/v1/chat`` is implemented (Sprint 4).
 
 Representative capabilities the router is expected to handle:
 
@@ -328,8 +314,8 @@ packages/
     selector.py             Deterministic model selector (AUTO + explicit).
     registry.py             Provider registration, lookup, health checks.
     nvidia/
-      __init__.py           NVIDIA package placeholder.
-      provider.py           NvidiaProvider stub (not yet implemented).
+      __init__.py           NVIDIA provider implementation package.
+      provider.py           NvidiaProvider (non-streaming generation via NVIDIA NIM API).
 
   tasks/                  Task Engine — task definitions, scheduling,
                           and execution (**Implemented, Sprint 2**).
@@ -643,8 +629,8 @@ This roadmap describes the intended order of major architectural phases. It is n
 | Sprint 1 | Foundation — versioned API, standard response envelope, structured logging, request correlation, global exception handling, dashboard skeleton, and the abstract AI provider interface | **Completed** |
 | Sprint 2.1 | Runtime Modernization — make the backend compatible with the latest stable Python release (currently Python 3.14), keeping the project maintainable for future Python releases | **Completed** |
 | Sprint 2 | Task Engine — task creation, the state transitions defined in [Task Lifecycle](#12-task-lifecycle), the execution modes defined in [Execution Modes](#14-execution-modes), and capability-based routing as described in [Capability Router](#7-capability-router) | **Completed** |
-| Sprint 3 | Provider Foundation and Model Selection — model profiles (AUTO, LIGHTNING, SUPER, ULTRA), deterministic ModelSelector with keyword-scoring AUTO mode and explicit SUPER tie-breaking, ProviderRegistry, and NVIDIA provider placeholder | **Completed** |
-| Sprint 4 | NVIDIA Provider Integration — real NVIDIA API calls, authentication, model routing to Nemotron models (Lightning, Super, Ultra) | **Next** |
+| Sprint 3 | Provider Foundation and Model Selection — model profiles (AUTO, LIGHTNING, SUPER, ULTRA), deterministic ModelSelector with keyword-scoring AUTO mode and explicit SUPER tie-breaking, ProviderRegistry, and NVIDIA provider foundation (placeholder-level interface) | **Completed** |
+| Sprint 4 | NVIDIA Provider Integration — real NVIDIA API calls, authentication, model routing to Nemotron models (Lightning, Super, Ultra), application-layer integration via POST /api/v1/chat | **Completed** |
 | Sprint 5+ | Memory + RAG, deRek Mind, Plugin Layer, additional integrations — Embedding support, Hybrid Retrieval, Reranking, Context Builder, autonomous agent architecture | **Planned** |
 
 Phase boundaries and ordering may change as the project develops. Each sprint is expected to be built on a stable version of the sprints before it — the Task Engine builds on Sprint 1's Foundation, the Provider Foundation builds on the provider abstractions and Task Engine, real NVIDIA integration builds on the Provider Foundation, and future deRek Mind and Memory + RAG capabilities build on these underlying systems.

@@ -10,6 +10,9 @@ No API keys, network access, or external services are required.
 
 from __future__ import annotations
 
+import asyncio
+import json
+import unittest.mock
 import httpx
 import pytest
 
@@ -1079,6 +1082,28 @@ class TestNvidiaProviderGenerate:
             payload = mock_client.post.call_args.kwargs["json"]
             assert payload["model"] == "nemotron-3.5-lightning"
 
+    def test_generate_malformed_json_raises_unavailable(self, monkeypatch):
+        """Malformed JSON from NVIDIA API raises ProviderUnavailableError."""
+        import json as _json
+
+        provider = _make_provider(monkeypatch)
+
+        mock_response = MagicMock()
+        mock_response.json.side_effect = _json.JSONDecodeError("bad json", "doc", 0)
+        mock_client = AsyncMock()
+        mock_client.post = AsyncMock(return_value=mock_response)
+        mock_client.aclose = AsyncMock()
+        mock_client.start = AsyncMock()
+
+        with patch(
+            "packages.providers.nvidia.provider.NvidiaHttpClient"
+        ) as mock_cls:
+            mock_cls.return_value = mock_client
+            import asyncio
+
+            with pytest.raises(ProviderUnavailableError, match="malformed"):
+                asyncio.run(provider.generate(self._request()))
+
 
 class TestNvidiaProviderBehavior:
     def test_stream_raises_not_implemented(self):
@@ -1218,6 +1243,11 @@ class TestParseResponseMalformed:
         assert result.usage.input_tokens == 10
         assert result.usage.output_tokens == 5
 
+    def test_json_decode_error_raises_unavailable(self, provider):
+        """Provider raises ProviderUnavailableError when response is not valid JSON."""
+        with pytest.raises(ProviderUnavailableError, match="unexpected response format"):
+            provider._parse_response("not valid json", "model-1")  # type: ignore[arg-type]
+
 
 # ===========================================================================
 # Fail-fast API key (Sprint 4 Phase 3.1 — Issue 4)
@@ -1247,3 +1277,100 @@ class TestFailFastNoApiKey:
         assert settings.has_api_key is False
         client = NvidiaHttpClient(settings)
         assert not client._settings.has_api_key
+
+
+class TestNvidiaHttpClientErrorHandling:
+    """Comprehensive HTTP error status code handling."""
+
+    @staticmethod
+    def _client(api_key: str = "test-api-key") -> NvidiaHttpClient:
+        settings = NvidiaSettings(
+            api_key=api_key,
+            base_url="https://test.nvidia.com/v1",
+            timeout_seconds=30,
+        )
+        return NvidiaHttpClient(settings)
+
+    def _setup_client(self, client, mock_response):
+        client._client = unittest.mock.AsyncMock()
+        client._client.post = unittest.mock.AsyncMock(return_value=mock_response)
+
+    def test_400_translated(self):
+        client = self._client()
+        self._setup_client(client, _FakeResponse(400))
+        with pytest.raises(ProviderUnavailableError, match="request failed"):
+            asyncio.run(client.post("/chat/completions"))
+
+    def test_404_translated(self):
+        client = self._client()
+        self._setup_client(client, _FakeResponse(404))
+        with pytest.raises(ProviderUnavailableError, match="endpoint not found"):
+            asyncio.run(client.post("/chat/completions"))
+
+    def test_408_translated(self):
+        client = self._client()
+        self._setup_client(client, _FakeResponse(408))
+        with pytest.raises(ProviderUnavailableError, match="request failed"):
+            asyncio.run(client.post("/chat/completions"))
+
+    def test_429_translated(self):
+        client = self._client()
+        self._setup_client(client, _FakeResponse(429))
+        with pytest.raises(ProviderUnavailableError, match="rate limit"):
+            asyncio.run(client.post("/chat/completions"))
+
+    def test_502_translated(self):
+        client = self._client()
+        self._setup_client(client, _FakeResponse(502))
+        with pytest.raises(ProviderUnavailableError, match="server error"):
+            asyncio.run(client.post("/chat/completions"))
+
+    def test_503_translated(self):
+        client = self._client()
+        self._setup_client(client, _FakeResponse(503))
+        with pytest.raises(ProviderUnavailableError, match="server error"):
+            asyncio.run(client.post("/chat/completions"))
+
+    def test_any_5xx_translated(self):
+        client = self._client()
+        self._setup_client(client, _FakeResponse(599))
+        with pytest.raises(ProviderUnavailableError, match="server error"):
+            asyncio.run(client.post("/chat/completions"))
+
+    def test_401_no_api_key_leak(self):
+        client = self._client(api_key="super-secret-12345")
+        self._setup_client(client, _FakeResponse(401))
+        with pytest.raises(ProviderUnavailableError) as exc_info:
+            asyncio.run(client.post("/chat/completions"))
+        assert "super-secret-12345" not in str(exc_info.value)
+        assert "Bearer" not in str(exc_info.value)
+
+    def test_error_message_never_contains_api_key(self):
+        client = self._client(api_key="nvapi-test-key-xyz")
+        self._setup_client(client, _FakeResponse(500))
+        with pytest.raises(ProviderUnavailableError) as exc_info:
+            asyncio.run(client.post("/chat/completions"))
+        assert "nvapi-test-key-xyz" not in str(exc_info.value)
+
+    def test_malformed_json_raises_unavailable(self):
+        """JSON decode errors happen at the provider layer, not the client."""
+        client = self._client()
+        mock_response = unittest.mock.MagicMock()
+        mock_response.is_success = True
+        self._setup_client(client, mock_response)
+        # Client returns the raw response without attempting JSON decode.
+        # JSON parsing is the provider's responsibility.
+        result = asyncio.run(client.post("/chat/completions"))
+        assert result is mock_response
+
+    def test_http_error_general_raises_unavailable(self):
+        client = self._client()
+
+        async def _raise_http(*args, **kwargs):
+            raise httpx.HTTPError("general HTTP error")
+
+        client._client = unittest.mock.AsyncMock()
+        client._client.post = _raise_http
+
+        with pytest.raises(ProviderUnavailableError, match="NVIDIA API request failed"):
+            asyncio.run(client.post("/chat/completions"))

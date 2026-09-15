@@ -14,6 +14,8 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 
+import json
+
 from packages.providers.base import (
     AIProvider,
     ProviderCapability,
@@ -102,7 +104,12 @@ class NvidiaProvider(AIProvider):
                 await client.start()
             payload = self._build_payload(request, model_id)
             response = await client.post("/chat/completions", json=payload)
-            data = response.json()
+            try:
+                data = response.json()
+            except (json.JSONDecodeError, ValueError) as exc:
+                raise ProviderUnavailableError(
+                    "NVIDIA API returned a malformed response"
+                ) from exc
             return self._parse_response(data, model_id)
         finally:
             if owns_client:

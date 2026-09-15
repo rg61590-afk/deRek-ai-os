@@ -49,7 +49,7 @@
 
 deRek AI OS is an open-source project building toward an autonomous operating layer for AI-driven work: coding, automation, creative generation, and intelligent task execution, coordinated through a single system rather than a collection of disconnected tools.
 
-The project is in **early development**. The current release (`v0.1.0`) establishes the production-grade foundation — a versioned API, a structured logging and error-handling layer, and a minimal dashboard — that every future capability will be built on top of. The Task Engine (Sprint 2) is implemented: it delivers the full task lifecycle, state machine, in-memory storage, task queue, and a pluggable executor interface exposed over HTTP via `/api/v1/tasks`. The Provider Foundation (Sprint 3) is also complete: it provides logical model profiles (AUTO, LIGHTNING, SUPER, ULTRA), a deterministic model selector, a provider registry, and a placeholder NVIDIA provider — no real API calls are wired yet. The current focus is Sprint 4 — NVIDIA Provider Integration. No deRek Mind, Memory + RAG, or Plugin Layer is implemented yet — see [Current Features](#current-features) and [Planned Features](#planned-features) for the full breakdown.
+The project is in **early development**. The current release (`v0.1.0`) establishes the production-grade foundation — a versioned API, a structured logging and error-handling layer, and a minimal dashboard — that every future capability will be built on top of. The Task Engine (Sprint 2) is implemented: it delivers the full task lifecycle, state machine, in-memory storage, task queue, and a pluggable executor interface exposed over HTTP via `/api/v1/tasks`. Sprint 2.1 (Runtime Modernization) and Sprint 3 (Provider Foundation and Model Selection) are also complete: the backend runs on Python 3.14, and the provider layer provides logical model profiles (AUTO, LIGHTNING, SUPER, ULTRA), a deterministic model selector, a provider registry, and a fully functional NVIDIA provider. Sprint 4 (NVIDIA Provider Integration) is complete: the application-layer provider integration wires the NVIDIA provider into the FastAPI backend, providing `POST /api/v1/chat` for AI text generation through the Nemotron model family. No deRek Mind, Memory + RAG, or Plugin Layer is implemented yet — see [Current Features](#current-features) and [Planned Features](#planned-features) for the full breakdown.
 
 ## Current Status
 
@@ -57,9 +57,9 @@ The project is in **early development**. The current release (`v0.1.0`) establis
 |---|---|
 | **Version** | `v0.1.0` |
 | **Status** | Early Development |
-| **Current sprint** | Sprint 4 — NVIDIA Provider Integration (see [Roadmap](#roadmap)) |
+| **Current sprint** | Sprint 4 Complete — NVIDIA AI Integration (`POST /api/v1/chat`) |
 
-The foundational phase (Sprint 1) and the Task Engine (Sprint 2) are complete, delivering the full task lifecycle, state machine, in-memory storage, task queue, and a pluggable executor interface exposed over HTTP via `/api/v1/tasks`. Sprint 2.1 (Runtime Modernization) and Sprint 3 (Provider Foundation and Model Selection) are also complete: the backend runs on Python 3.14, and the provider layer provides logical model profiles (AUTO, LIGHTNING, SUPER, ULTRA), a deterministic model selector, a provider registry, and a placeholder NVIDIA provider. No real API calls are wired yet. The current focus is Sprint 4 — NVIDIA Provider Integration. No deRek Mind, Memory + RAG, or Plugin Layer is implemented yet — see [Current Features](#current-features) and [Planned Features](#planned-features) for the full breakdown.
+The foundational phase (Sprint 1) and the Task Engine (Sprint 2) are complete, delivering the full task lifecycle, state machine, in-memory storage, task queue, and a pluggable executor interface exposed over HTTP via `/api/v1/tasks`. Sprint 2.1 (Runtime Modernization), Sprint 3 (Provider Foundation and Model Selection), and Sprint 4 (NVIDIA AI Integration) are also complete: the backend runs on Python 3.14, the provider layer provides logical model profiles (AUTO, LIGHTNING, SUPER, ULTRA) with a deterministic selector and registry, and the NVIDIA provider is fully wired to the Nemotron model family via `POST /api/v1/chat`. No deRek Mind, Memory + RAG, embeddings, or Plugin Layer is implemented yet — see [Current Features](#current-features) and [Planned Features](#planned-features) for the full breakdown.
 
 ## Vision
 
@@ -102,8 +102,9 @@ Everything in this section is implemented in the current codebase.
 - **Minimal web dashboard** — a React, TypeScript, and Tailwind CSS single-page app that displays the application name, version, and live server status by polling the API.
 - **Reserved subsystem scaffolding** — `packages/kernel`, `packages/tasks`, `packages/events`, `packages/plugins`, `packages/agents`, `packages/memory`, and `packages/shared` exist as structured packages. `packages/tasks` is fully implemented (Task Engine). The remaining are reserved for future subsystems.
 - **Automated test coverage** — a `pytest` suite covering the health and version endpoints, the response envelope contract, request ID propagation, and the global exception handler.
-- **Task Engine** — the full task lifecycle (Queued, Planning, Running, Waiting, Completed, Failed, Cancelled), state machine transitions, in-memory storage, task queue, and a pluggable executor interface. Exposed over HTTP via `/api/v1/tasks`. The default executor performs no real work; AI-powered execution is deferred to Sprint 4.
-- **Provider Foundation** — logical model profiles (AUTO, LIGHTNING, SUPER, ULTRA), a deterministic `ModelSelector` for AUTO mode, a `ProviderRegistry` for registering and looking up providers, and a placeholder NVIDIA provider stub. `generate()` and `stream()` raise `NotImplementedError`; `health_check()` returns `False`. No real API calls are made; no API keys are used; no NVIDIA model IDs are configured. Real NVIDIA integration is planned for Sprint 4.
+- **Task Engine** — the full task lifecycle (Queued, Planning, Running, Waiting, Completed, Failed, Cancelled), state machine transitions, in-memory storage, task queue, and a pluggable executor interface. Exposed over HTTP via `/api/v1/tasks`. The default executor performs no real work; AI-powered autonomous task execution remains planned as part of the future deRek Mind/agent architecture.
+- **Provider Foundation** — logical model profiles (AUTO, LIGHTNING, SUPER, ULTRA), a deterministic `ModelSelector` for AUTO mode (keyword-based heuristic selection with SUPER tie-breaking), a `ProviderRegistry` for registering and looking up providers, and a fully functional NVIDIA provider implementation that routes requests to Nemotron model IDs. The NVIDIA provider maps logical profiles to configured model IDs and handles non-streaming text generation with HTTP error translation and malformed response hardening.
+- **AI Chat API** — `POST /api/v1/chat` for AI text generation. Supports AUTO (keyword-based heuristic selection) or explicit model profiles (lightning, super, ultra). Returns generated content, usage metrics, finish reason, and the selected logical model profile in the standard response envelope.
 
 ## Planned Features
 
@@ -111,7 +112,8 @@ Everything in this section is **not yet implemented**. It represents the intende
 
 - **deRek Mind** (`packages/agents`) — autonomous, multi-step task planning and execution built on top of the Task Engine and provider layer.
 - **Memory Layer** (`packages/memory`) — persistent state and context storage for tasks, agents, and providers.
-- **Real NVIDIA API integration** — wiring the NVIDIA provider placeholder to real Nemotron model APIs (Sprint 4).
+- **Embeddings** — `Nemotron Embed` model integration for the future Memory + RAG layer.
+- **Streaming** — Server-Sent Events (SSE) streaming for real-time AI response delivery.
 - **Authentication and authorization** — not present in the current foundation.
 - **Database connectivity** — no database is connected in the current release.
 - **Mobile dashboard** — a mobile client, reserved at `apps/mobile`, not yet started.
@@ -120,12 +122,13 @@ Everything in this section is **not yet implemented**. It represents the intende
 ## AI Provider Strategy
 
 The system defines its AI capabilities behind a single abstract interface
-rather than coupling directly to any provider's SDK. This interface and
-the full provider foundation are implemented (Sprint 3). Concrete
-providers are not yet wired to real APIs — that is Sprint 4. The
-selection algorithm (keyword scoring, tie-breaking, registry lookup)
-is implemented and deterministic; real NVIDIA API calls are not yet
-wired. The full selection policy is documented in
+rather than coupling directly to any provider's SDK. This interface,
+the model profiles, the model selector, the provider registry, and the
+NVIDIA provider are all implemented (Sprint 3 and Sprint 4). Real
+NVIDIA API calls are wired and functional via `POST /api/v1/chat`.
+The full selection algorithm (keyword scoring, tie-breaking, registry
+lookup) is implemented and deterministic. The full selection policy is
+documented in
 [`docs/PROJECT_BIBLE.md`](docs/PROJECT_BIBLE.md#provider-selection-policy);
 the summary below covers what's implemented and what's planned.
 
@@ -138,7 +141,9 @@ the summary below covers what's implemented and what's planned.
 - `ModelMetadata` — a Pydantic model pairing a profile with its description and keyword tags (`recommended_for`).
 - `ModelSelector` — deterministic AUTO selection that scores profiles by keyword matches against the user message; ties resolve to SUPER; no matches fall back to a configurable default. Explicit selection bypasses AUTO entirely.
 - `ProviderRegistry` — registers providers by name, looks them up, returns sorted names, and runs health checks across all registered providers with graceful exception handling.
-- NVIDIA provider placeholder (`packages/providers/nvidia/provider.py`) — a stub where `generate()` and `stream()` raise `NotImplementedError` and `health_check()` returns `False`. No API calls, no API keys, no model IDs.
+- NVIDIA provider (`packages/providers/nvidia/provider.py`) — fully implemented with `generate()` routing to Nemotron models via `NvidiaHttpClient`, model ID resolution per logical profile, HTTP error translation, and malformed response hardening. `stream()` raises `NotImplementedError` (planned). `health_check()` returns `False` (placeholder).
+- AI application service (`apps/api/services/ai.py`) — resolves AUTO through `ModelSelector`, looks up providers through `ProviderRegistry`, builds `ProviderRequest`, invokes the provider, and returns the response with the resolved logical model profile.
+- Chat API endpoint (`apps/api/routers/chat.py`) — `POST /api/v1/chat` accepts logical model profiles (`auto`, `lightning`, `super`, `ultra`) and returns generated content, usage metrics, finish reason, and the selected logical profile in the standard response envelope.
 
 **Planned providers**, to be built as implementations of `AIProvider`:
 
@@ -149,35 +154,33 @@ the summary below covers what's implemented and what's planned.
 | NVIDIA | Nemotron 3 Ultra | Maximum reasoning model for complex planning, difficult coding, and multi-step agent tasks |
 | NVIDIA | Nemotron Embed | Planned retrieval/embedding model for the future Memory + RAG layer |
 
-**Current model profiles** (logical, not yet wired to real NVIDIA model IDs):
+**Current model profiles:**
 
 | Profile | Role | Intended use |
 |---|---|---|
-| AUTO | Automatic selection | deRek selects based on task complexity |
+| AUTO | Automatic selection | deRek selects based on task complexity using keyword scoring |
 | LIGHTNING | Fast / lightweight | Quick answers, simple tasks |
 | SUPER | Balanced default | General-purpose coding, reasoning, planning |
 | ULTRA | Maximum reasoning | Complex multi-step planning, difficult coding |
 
 ```mermaid
-flowchart TB
-    subgraph Interface["Implemented"]
-        AIProvider["AIProvider (abstract interface)\npackages/providers/base.py"]
+flowchart LR
+    subgraph App["Application Layer (Sprint 4)"]
+        Chat["POST /api/v1/chat"]
+        Service["AI Service\n(ModelSelector + Registry)"]
     end
 
-    subgraph NVIDIA["Planned — NVIDIA"]
-        Lightning["Nemotron 3.5 Lightning\n(fast, lightweight)"]
-        Super["Nemotron 3 Super\n(balanced default)"]
-        Ultra["Nemotron 3 Ultra\n(maximum reasoning)"]
-        Embed["Nemotron Embed\n(RAG/retrieval — planned)"]
+    subgraph Providers["Provider Layer (Sprint 3 + 4)"]
+        AIProvider["AIProvider\n(abstract)"]
+        NVIDIA["NVIDIA Provider\n(Nemotron models)"]
     end
 
-    AIProvider -.implements.-> Lightning
-    AIProvider -.implements.-> Super
-    AIProvider -.implements.-> Ultra
-    AIProvider -.implements.-> Embed
+    Chat -->|"logical profile"| Service
+    Service -->|"resolve AUTO"| AIProvider
+    AIProvider -.implements.-> NVIDIA
 
-    classDef planned stroke-dasharray: 5 5;
-    class Lightning,Super,Ultra,Embed planned;
+    classDef implemented fill:#e8f5e9,stroke:#2e7d32;
+    class App,Providers implemented;
 ```
 
 ## Future Integrations
@@ -208,13 +211,12 @@ flowchart LR
     Dashboard["Dashboard\nReact + TypeScript + Tailwind\n(implemented)"]
 
     subgraph API["FastAPI backend (implemented)"]
-        Router["/api/v1 router\n(health, version, tasks)"]
+        Router["/api/v1 router\n(health, version, tasks, chat)"]
         Middleware["Request ID middleware\nGlobal exception handling"]
         Envelope["StandardResponse envelope"]
     end
 
     subgraph Kernel["Core subsystems (reserved, not implemented)"]
-        Providers["Providers\nmodel profiles, selector, registry,\nNVIDIA placeholder (stub)"]
         Events["Event Bus (planned)"]
         deRekMind["deRek Mind (planned)"]
         Memory["Memory Layer (planned)"]
@@ -242,7 +244,7 @@ flowchart LR
 | Frontend styling | Tailwind CSS | Implemented |
 | Hosting | TBD (local development with VS Code) | To be configured |
 | Version control | GitHub | Implemented |
-| AI provider — NVIDIA | Provider foundation complete (model profiles, selector, registry, placeholder); real API integration is Sprint 4 | Provider Foundation implemented; integration planned |
+| AI provider — NVIDIA | Full NVIDIA integration including non-streaming generation, model routing, and the POST /api/v1/chat endpoint | Implemented (Sprint 4) |
 | Task execution | Task Engine | Implemented (Sprint 2) |
 | Worker execution | Worker loop (background processes) | Planned |
 | Messaging | Event Bus | Planned |
@@ -262,9 +264,13 @@ apps/
     schemas.py             Standard API response envelope
     middleware.py           Request ID middleware
     exceptions.py            Global exception handlers
+    services/
+      ai.py                 AI service layer (provider selection, generation)
     routers/
       health.py              GET /api/v1/health
       version.py              GET /api/v1/version
+      tasks.py                Task Engine CRUD endpoints
+      chat.py                 POST /api/v1/chat (AI generation)
       api.py                   Aggregates versioned routers
     tests/                  pytest suite
   dashboard/             React + TypeScript + Vite + Tailwind frontend
@@ -280,8 +286,10 @@ packages/
     selector.py            Deterministic model selector
     registry.py            Provider registration and lookup
     nvidia/
-      __init__.py          NVIDIA package placeholder
-      provider.py          NvidiaProvider stub
+      __init__.py          NVIDIA package
+      config.py             NvidiaSettings (environment config)
+      client.py             NvidiaHttpClient (async HTTP client)
+      provider.py           NvidiaProvider (non-streaming generation)
   tasks/                 Task Engine — task definitions, scheduling,
                          and execution (Sprint 2, implemented)
   events/                Reserved: event bus
@@ -368,9 +376,9 @@ pytest
 | Sprint 1 | Foundation — versioned API, standard response envelope, structured logging, request correlation, global exception handling, dashboard skeleton, abstract AI provider interface | Complete |
 | Sprint 2 | Task Engine — task creation, lifecycle (Queued, Planning, Running, Waiting, Completed, Failed, Cancelled), execution modes, and capability-based routing | Complete |
 | Sprint 2.1 | Runtime Modernization — backend compatibility with latest stable Python (currently 3.14), maintaining compatibility for future Python releases | Complete |
-| Sprint 3 | Provider Foundation and Model Selection — model profiles (AUTO, LIGHTNING, SUPER, ULTRA), deterministic ModelSelector, ProviderRegistry, NVIDIA placeholder stub | Complete |
-| Sprint 4 | NVIDIA Provider Integration — real NVIDIA API calls, model routing to Nemotron models | Next |
-| Sprint 5+ | Memory + RAG, deRek Mind, Plugin Layer, additional integrations — Embedding support, Hybrid Retrieval, Reranking, Context Builder, autonomous agent architecture | Planned |
+| Sprint 3 | Provider Foundation and Model Selection — model profiles (AUTO, LIGHTNING, SUPER, ULTRA), deterministic ModelSelector, ProviderRegistry, NVIDIA provider implementation | Complete |
+| Sprint 4 | NVIDIA AI Integration — NvidiaHttpClient, NvidiaProvider.generate(), POST /api/v1/chat, AUTO selection, model routing, error translation, security hardening | Complete |
+| Sprint 5+ | Memory + RAG, deRek Mind, Plugin Layer, additional integrations — Embedding support, Hybrid Retrieval, Reranking, Context Builder, autonomous agent architecture, streaming | Planned |
 
 Phase boundaries and ordering may change as the project develops. This table mirrors the Long-Term Roadmap in [`docs/PROJECT_BIBLE.md`](docs/PROJECT_BIBLE.md#24-long-term-roadmap), which also explains why each phase depends on the ones before it.
 

@@ -1,11 +1,10 @@
 """AI provider integrations for deRek AI OS.
 
-Exposes the abstract `AIProvider` interface, the logical model-profile
-domain (`ModelProfile`, `ModelMetadata`), the deterministic
-`ModelSelector`, the `ProviderRegistry`, and a placeholder NVIDIA
-provider package. No concrete provider is implemented in this release.
-The current planned runtime provider is NVIDIA with the Nemotron model
-family; the abstraction remains extensible for future providers.
+Exposes the abstract ``AIProvider`` interface, the logical model-profile
+domain (``ModelProfile``, ``ModelMetadata``), the deterministic
+``ModelSelector``, the ``ProviderRegistry``, and the NVIDIA provider
+implementation (``NvidiaProvider`` in the ``nvidia`` subpackage).
+The abstraction remains extensible for future providers.
 """
 
 from .base import (

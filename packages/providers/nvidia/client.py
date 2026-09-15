@@ -88,6 +88,11 @@ class NvidiaHttpClient:
 
         status = response.status_code
 
+        if status == 404:
+            raise ProviderUnavailableError(
+                "NVIDIA API endpoint not found — check the API configuration"
+            )
+
         if status in (401, 403):
             raise ProviderUnavailableError(
                 "NVIDIA API authentication failed — check NVIDIA_API_KEY"
