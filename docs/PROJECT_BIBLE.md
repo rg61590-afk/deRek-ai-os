@@ -629,7 +629,7 @@ This roadmap describes the intended order of major architectural phases. It is n
 | Sprint 1 | Foundation — versioned API, standard response envelope, structured logging, request correlation, global exception handling, dashboard skeleton, and the abstract AI provider interface | **Completed** |
 | Sprint 2.1 | Runtime Modernization — make the backend compatible with the latest stable Python release (currently Python 3.14), keeping the project maintainable for future Python releases | **Completed** |
 | Sprint 2 | Task Engine — task creation, the state transitions defined in [Task Lifecycle](#12-task-lifecycle), the execution modes defined in [Execution Modes](#14-execution-modes), and capability-based routing as described in [Capability Router](#7-capability-router) | **Completed** |
-| Sprint 3 | Provider Foundation and Model Selection — model profiles (AUTO, LIGHTNING, SUPER, ULTRA), deterministic ModelSelector with keyword-scoring AUTO mode and explicit SUPER tie-breaking, ProviderRegistry, and NVIDIA provider foundation (placeholder-level interface) | **Completed** |
+| Sprint 3 | Provider Foundation and Model Selection — model profiles (AUTO, LIGHTNING, SUPER, ULTRA), deterministic ModelSelector with keyword-scoring AUTO mode and explicit SUPER tie-breaking, ProviderRegistry, and NVIDIA provider stub (no real API calls) | **Completed** |
 | Sprint 4 | NVIDIA Provider Integration — real NVIDIA API calls, authentication, model routing to Nemotron models (Lightning, Super, Ultra), application-layer integration via POST /api/v1/chat | **Completed** |
 | Sprint 5+ | Memory + RAG, deRek Mind, Plugin Layer, additional integrations — Embedding support, Hybrid Retrieval, Reranking, Context Builder, autonomous agent architecture | **Planned** |
 
